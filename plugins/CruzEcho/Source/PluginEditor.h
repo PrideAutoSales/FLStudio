@@ -1,5 +1,6 @@
 #pragma once
 
+#include "EditorRedrawGuard.h"
 #include "PluginProcessor.h"
 
 namespace cruzui
@@ -66,6 +67,10 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    // Draw on the main thread instead of in the background. Some hosts (FL
+    // Studio on macOS) otherwise show an empty window on the first open.
+    bool wantsLayerBackedView() const override { return false; }
+
 private:
     void updateTimeKnob();
 
@@ -82,6 +87,8 @@ private:
     cruzui::Knob saturation, wobble, lowCut, highCut, width, duck;
 
     juce::ParameterAttachment syncWatcher;
+
+    cruz::EditorRedrawGuard redrawGuard { *this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CruzEchoAudioProcessorEditor)
 };

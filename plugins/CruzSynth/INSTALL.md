@@ -17,7 +17,8 @@ You only need to do this once per new build. No coding tools are needed.
    bash ~/Downloads/CruzSynth-mac/install.sh
    ```
 
-3. When it says **Cruz Synth is installed**, you can close Terminal.
+3. It asks for your **Mac login password**. Type it and press Return. Nothing appears while you type, which is normal.
+4. When it says **Done**, you can close Terminal. Cruz Synth is now in **/Library/Audio/Plug-Ins** (the VST3 is in `/Library/Audio/Plug-Ins/VST3`), which is the folder FL Studio scans.
 
 ## 3. Load it in FL Studio
 

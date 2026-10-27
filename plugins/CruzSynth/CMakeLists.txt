@@ -7,7 +7,7 @@ juce_add_plugin(CruzSynth
     PLUGIN_MANUFACTURER_CODE Cruz
     PLUGIN_CODE Crsy
     PRODUCT_NAME "Cruz Synth"
-    VERSION 0.1.0
+    VERSION 0.1.1
     FORMATS VST3 AU
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE

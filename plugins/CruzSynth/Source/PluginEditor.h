@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include "UI/Pages.h"
 #include "UI/WavetableEditor.h"
+#include "EditorRedrawGuard.h"
 
 class CruzSynthEditor : public juce::AudioProcessorEditor,
                         public juce::DragAndDropContainer,
@@ -15,6 +16,10 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    // Draw on the main thread instead of in the background. Some hosts (FL
+    // Studio on macOS) otherwise show an empty window on the first open.
+    bool wantsLayerBackedView() const override { return false; }
 
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
@@ -46,6 +51,8 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     int page = 0;
     int lastVoices = -1;
+
+    cruz::EditorRedrawGuard redrawGuard { *this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CruzSynthEditor)
 };

@@ -76,7 +76,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view latest || gh release create latest \
+          gh release view latest > /dev/null 2>&1 || gh release create latest \
             --target "$GITHUB_SHA" \
             --title "Latest build" \
             --notes "Built automatically from main. Each plugin has its own zip; install steps are inside each zip."

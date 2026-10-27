@@ -60,3 +60,6 @@ add_executable(CruzEQTests Tests/DspTests.cpp)
 target_include_directories(CruzEQTests PRIVATE Source)
 target_link_libraries(CruzEQTests PRIVATE juce::juce_recommended_config_flags)
 add_test(NAME dsp COMMAND CruzEQTests)
+
+add_subdirectory(plugins/CruzOpto)
+add_subdirectory(plugins/CruzFET)

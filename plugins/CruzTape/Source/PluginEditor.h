@@ -1,5 +1,6 @@
 #pragma once
 
+#include "EditorRedrawGuard.h"
 #include "PluginProcessor.h"
 
 class TapeLookAndFeel final : public juce::LookAndFeel_V4
@@ -68,6 +69,10 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    // Draw on the main thread instead of in the background. Some hosts (FL
+    // Studio on macOS) otherwise show an empty window on the first open.
+    bool wantsLayerBackedView() const override { return false; }
+
 private:
     struct Knob
     {
@@ -92,6 +97,8 @@ private:
     Knob input, bias, wow, flutter, hiss, mix, output;
 
     juce::uint32 lastTimerTime = 0;
+
+    cruz::EditorRedrawGuard redrawGuard { *this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CruzTapeAudioProcessorEditor)
 };

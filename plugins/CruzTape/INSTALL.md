@@ -17,13 +17,19 @@ You only need to do this once per new build. No coding tools are needed.
    bash ~/Downloads/CruzTape-mac/install.sh
    ```
 
-3. When it says **Cruz Tape is installed**, you can close Terminal.
+3. It asks for your Mac login password, because the plugin goes in the Mac's main
+   plugin folder (`/Library/Audio/Plug-Ins`), which is where FL Studio looks.
+   Type the password and press Return. Nothing appears while you type, which is normal.
+4. When it says **Done**, you can close Terminal.
 
 ## 3. Load it in FL Studio
 
 1. In FL Studio, open **Options > Manage plugins**.
 2. Click **Find installed plugins** and wait for the scan to finish.
 3. Open the **Mixer**, click an empty effect slot on any track, and choose **Cruz Tape**.
+
+If Cruz Tape does not show up, check that the plugin manager's search paths include
+`/Library/Audio/Plug-Ins/VST3`, then scan again.
 
 ## Updating to a newer build
 

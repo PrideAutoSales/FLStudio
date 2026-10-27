@@ -1,7 +1,7 @@
 # Cruz Tape: a two-track tape machine. JUCE is fetched by the root CMakeLists.
 
 juce_add_plugin(CruzTape
-    VERSION 0.1.0
+    VERSION 0.1.1
     COMPANY_NAME "Cruz Audio"
     BUNDLE_ID com.cruzaudio.cruztape
     PLUGIN_MANUFACTURER_CODE Cruz

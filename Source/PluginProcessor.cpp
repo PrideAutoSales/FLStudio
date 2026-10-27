@@ -13,6 +13,23 @@ CruzEQAudioProcessor::CruzEQAudioProcessor()
     outputGainDb = state.getRawParameterValue (Params::outputGain);
     autoGainOn = state.getRawParameterValue (Params::autoGain);
     gainScale = state.getRawParameterValue (Params::gainScale);
+    phaseModeParam = state.getRawParameterValue (Params::phaseMode);
+    resolutionParam = state.getRawParameterValue (Params::resolution);
+}
+
+CruzEQAudioProcessor::~CruzEQAudioProcessor()
+{
+    cancelPendingUpdate();
+}
+
+cruz::dsp::PhaseMode CruzEQAudioProcessor::requestedPhaseMode() const noexcept
+{
+    return (cruz::dsp::PhaseMode) juce::jlimit (0, cruz::dsp::numPhaseModes - 1, juce::roundToInt (phaseModeParam->load()));
+}
+
+int CruzEQAudioProcessor::requestedResolution() const noexcept
+{
+    return juce::jlimit (0, cruz::dsp::numLinearResolutions - 1, juce::roundToInt (resolutionParam->load()));
 }
 
 void CruzEQAudioProcessor::prepareToPlay (double sampleRate, int)
@@ -20,10 +37,24 @@ void CruzEQAudioProcessor::prepareToPlay (double sampleRate, int)
     currentSampleRate = sampleRate;
     eq.prepare (sampleRate);
     updateTargets();
+    currentDynamicDb = {};
+    phaseModes.prepare (sampleRate, getTotalNumOutputChannels(), requestedPhaseMode(), requestedResolution(), targets, currentDynamicDb);
+    setLatencySamples (phaseModes.latencySamples());
     autoGainDirty = true;
     autoGainCountdown = 0;
     outputGain.reset (sampleRate, 0.05);
     outputGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (totalOutputGainDb (0)));
+}
+
+void CruzEQAudioProcessor::releaseResources()
+{
+    phaseModes.release();
+}
+
+void CruzEQAudioProcessor::handleAsyncUpdate()
+{
+    // The host is told about a new latency from the message thread.
+    setLatencySamples (pendingLatency.load());
 }
 
 void CruzEQAudioProcessor::updateTargets() noexcept
@@ -99,8 +130,36 @@ void CruzEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     for (int b = 0; b < Params::numBands; ++b)
         eq.setBand (b, targets[(size_t) b]);
 
+    using cruz::dsp::PhaseMode;
+    const auto mode = requestedPhaseMode();
+    const int resolution = requestedResolution();
+
+    if (mode != phaseModes.getMode() || (mode == PhaseMode::linear && resolution != phaseModes.getResolution()))
+    {
+        if (mode == PhaseMode::zeroLatency)
+            eq.invalidate();
+
+        phaseModes.setMode (mode, resolution);
+        pendingLatency = phaseModes.latencySamples();
+        triggerAsyncUpdate();
+    }
+
     preEqFifo.push (buffer);
-    eq.process (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), numSamples);
+
+    if (mode == PhaseMode::zeroLatency)
+    {
+        eq.process (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), numSamples);
+    }
+    else
+    {
+        // The filters only listen for dynamic bands; the kernels do the EQ.
+        eq.detect (buffer.getArrayOfReadPointers(), buffer.getNumChannels(), numSamples);
+
+        for (int b = 0; b < Params::numBands; ++b)
+            currentDynamicDb[(size_t) b] = eq.currentDynamicGainDb (b);
+
+        phaseModes.process (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), numSamples, targets, currentDynamicDb);
+    }
 
     outputGain.setTargetValue (juce::Decibels::decibelsToGain (totalOutputGainDb (numSamples)));
 

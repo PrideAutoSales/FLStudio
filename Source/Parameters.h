@@ -10,6 +10,8 @@ inline constexpr int numBands = 24;
 inline constexpr auto outputGain = "outputGain";
 inline constexpr auto autoGain = "autoGain";
 inline constexpr auto gainScale = "gainScale";
+inline constexpr auto phaseMode = "phaseMode";
+inline constexpr auto resolution = "lpResolution";
 
 enum class BandField
 {
@@ -32,6 +34,8 @@ juce::String bandId (int band, BandField field);
 const juce::StringArray& shapeNames();
 const juce::StringArray& slopeNames();
 const juce::StringArray& placementNames();
+const juce::StringArray& phaseModeNames();
+const juce::StringArray& resolutionNames();
 juce::String formatFrequency (double hz);
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();

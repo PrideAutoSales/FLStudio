@@ -252,6 +252,66 @@ public:
         }
     }
 
+    // Runs only the dynamic EQ level detection, for the phase modes that
+    // filter with kernels instead. The audio is left untouched.
+    void detect (const float* const* channels, int numChannels, int numSamples) noexcept
+    {
+        numChannels = std::min (numChannels, maxChannels);
+        const bool stereo = numChannels == 2;
+
+        for (int start = 0; start < numSamples; start += subBlockSize)
+        {
+            const int n = std::min (subBlockSize, numSamples - start);
+            updateTargets();
+
+            std::array<double, subBlockSize> inLeft, inRight, inMid, inSide;
+
+            for (int i = 0; i < n; ++i)
+            {
+                const auto k = (size_t) i;
+                inLeft[k] = channels[0][start + i];
+                inRight[k] = stereo ? channels[1][start + i] : 0.0;
+                inMid[k] = 0.5 * (inLeft[k] + inRight[k]);
+                inSide[k] = 0.5 * (inLeft[k] - inRight[k]);
+            }
+
+            for (auto& b : bands)
+            {
+                if (! b.target.active)
+                    continue;
+
+                const auto placement = stereo ? b.target.placement : Placement::left;
+
+                if (! stereo && b.target.placement == Placement::side)
+                    continue;
+
+                const double* in[] { inLeft.data(), inRight.data() };
+                const double* single[] { placement == Placement::left    ? inLeft.data()
+                                         : placement == Placement::right ? inRight.data()
+                                         : placement == Placement::mid   ? inMid.data()
+                                                                         : inSide.data() };
+
+                if (placement == Placement::stereo)
+                    b.updateDynamics (in, 2, n, sampleRate);
+                else
+                    b.updateDynamics (single, 1, n, sampleRate);
+
+                b.appliedDynamicDb = b.dynamicDb;
+            }
+        }
+    }
+
+    // Makes every band recalculate its coefficients and start from silence,
+    // for when the filters take over again after a phase mode change.
+    void invalidate() noexcept
+    {
+        for (auto& b : bands)
+        {
+            b.dirty = true;
+            b.clearState();
+        }
+    }
+
     // How far a dynamic band has moved its gain right now, in dB.
     double currentDynamicGainDb (int index) const noexcept { return bands[(size_t) index].appliedDynamicDb; }
 
@@ -286,6 +346,19 @@ private:
         // Filters `numChannels` buffers in place. `inputs` is the matching
         // part of the plugin's input, which dynamic bands listen to.
         void process (double* const* buffers, const double* const* inputs, int numChannels, int n, double sampleRate) noexcept
+        {
+            updateDynamics (inputs, numChannels, n, sampleRate);
+
+            if (dirty)
+                updateDesign (sampleRate);
+
+            for (int ch = 0; ch < numChannels; ++ch)
+                run (ch, buffers[ch], n);
+        }
+
+        // Follows the input level and moves dynamicDb; marks the band dirty
+        // when the move is big enough to need new coefficients.
+        void updateDynamics (const double* const* inputs, int numChannels, int n, double sampleRate) noexcept
         {
             double targetDb = 0.0;
 
@@ -327,12 +400,6 @@ private:
             // final value always is.
             if (std::abs (dynamicDb - appliedDynamicDb) > 0.005 || (exactlyEqual (dynamicDb, targetDb) && ! exactlyEqual (dynamicDb, appliedDynamicDb)))
                 dirty = true;
-
-            if (dirty)
-                updateDesign (sampleRate);
-
-            for (int ch = 0; ch < numChannels; ++ch)
-                run (ch, buffers[ch], n);
         }
 
         void updateDesign (double sampleRate) noexcept

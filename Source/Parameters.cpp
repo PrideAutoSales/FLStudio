@@ -43,6 +43,18 @@ const juce::StringArray& placementNames()
     return names;
 }
 
+const juce::StringArray& phaseModeNames()
+{
+    static const juce::StringArray names { "Zero Latency", "Natural Phase", "Linear Phase" };
+    return names;
+}
+
+const juce::StringArray& resolutionNames()
+{
+    static const juce::StringArray names { "Low", "Medium", "High", "Very High", "Maximum" };
+    return names;
+}
+
 juce::String formatFrequency (double hz)
 {
     if (hz < 1000.0)
@@ -61,6 +73,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         juce::NormalisableRange<float> { -24.0f, 24.0f, 0.01f }, 0.0f,
         juce::AudioParameterFloatAttributes().withLabel ("dB")));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { autoGain, 1 }, "Auto Gain", false));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { phaseMode, 1 }, "Phase Mode", phaseModeNames(), 0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { resolution, 1 }, "Linear Phase Resolution", resolutionNames(), 1));
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { gainScale, 1 }, "Gain Scale",
         juce::NormalisableRange<float> { 0.0f, 200.0f, 0.1f }, 100.0f,

@@ -36,6 +36,7 @@ target_sources(CruzEQ
         Source/Parameters.cpp
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
+        Source/PhaseModeRunner.cpp
         Source/ui/BandPanel.cpp
         Source/ui/EqDisplay.cpp)
 

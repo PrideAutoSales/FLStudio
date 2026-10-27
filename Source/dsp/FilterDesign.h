@@ -94,6 +94,12 @@ struct AnalogSection
         const double dr = d0 - d2 * x * x, di = d1 * x;
         return (nr * nr + ni * ni) / (dr * dr + di * di);
     }
+
+    // H(jx), with phase.
+    std::complex<double> response (double x) const noexcept
+    {
+        return std::complex<double> (n0 - n2 * x * x, n1 * x) / std::complex<double> (d0 - d2 * x * x, d1 * x);
+    }
 };
 
 // Frequency weights for the power-spectrum form |H|^2 = (B.phi) / (A.phi).
@@ -298,6 +304,14 @@ struct AnalogDesign
         for (int i = 0; i < numSections; ++i)
             p *= sections[(size_t) i].power (x);
         return p;
+    }
+
+    std::complex<double> responseAt (double x) const noexcept
+    {
+        std::complex<double> h (gain, 0.0);
+        for (int i = 0; i < numSections; ++i)
+            h *= sections[(size_t) i].response (x);
+        return h;
     }
 };
 

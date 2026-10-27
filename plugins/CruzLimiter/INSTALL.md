@@ -17,7 +17,9 @@ You only need to do this once per new build. No coding tools are needed.
    bash ~/Downloads/CruzLimiter-mac/install.sh
    ```
 
-3. When it says **Cruz Limiter is installed**, you can close Terminal.
+3. It asks for your **Mac login password**. Type it and press Return. Nothing appears while you type, which is normal.
+4. When it says **Done**, you can close Terminal. The plugin is now in `/Library/Audio/Plug-Ins/VST3`
+   (and the AU version in `/Library/Audio/Plug-Ins/Components`), the folders FL Studio scans.
 
 ## 3. Load it in FL Studio
 
@@ -42,3 +44,5 @@ Hover over any control to see a short explanation.
 ## Updating to a newer build
 
 Delete the old **CruzLimiter-mac** folder in Downloads, then repeat steps 1 and 2 and restart FL Studio.
+
+If FL Studio does not list Cruz Limiter after a scan, check that `/Library/Audio/Plug-Ins/VST3/Cruz Limiter.vst3` exists (in Finder, press Shift + Cmd + G and paste the folder path).

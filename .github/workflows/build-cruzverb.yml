@@ -5,12 +5,10 @@ on:
     branches: [main]
     paths:
       - "plugins/CruzVerb/**"
-      - "CMakeLists.txt"
       - ".github/workflows/build-cruzverb.yml"
   pull_request:
     paths:
       - "plugins/CruzVerb/**"
-      - "CMakeLists.txt"
       - ".github/workflows/build-cruzverb.yml"
   workflow_dispatch:
 

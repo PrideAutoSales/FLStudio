@@ -1,0 +1,87 @@
+name: Build Cruz Limiter
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "plugins/CruzLimiter/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/build-limiter.yml"
+  pull_request:
+    paths:
+      - "plugins/CruzLimiter/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/build-limiter.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLUGIN_NAME: Cruz Limiter
+  ZIP_NAME: CruzLimiter-mac
+  ARTEFACTS: build/plugins/CruzLimiter/CruzLimiter_artefacts/Release
+  PLUGINVAL_VERSION: v1.0.4
+
+jobs:
+  build-mac:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCRUZ_LIMITER_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --target CruzLimiter_All CruzLimiterTests --parallel 4
+
+      - name: Engine tests (ceiling, true peak, latency, loudness, CPU)
+        run: build/plugins/CruzLimiter/CruzLimiterTests_artefacts/Release/CruzLimiterTests
+
+      - name: Sign (ad hoc)
+        run: |
+          codesign --force --deep --sign - "$ARTEFACTS/VST3/$PLUGIN_NAME.vst3"
+          codesign --force --deep --sign - "$ARTEFACTS/AU/$PLUGIN_NAME.component"
+
+      - name: Validate VST3 (pluginval)
+        run: |
+          curl -sSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/download/$PLUGINVAL_VERSION/pluginval_macOS.zip"
+          unzip -q pluginval.zip
+          pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --validate-in-process --validate "$ARTEFACTS/VST3/$PLUGIN_NAME.vst3"
+
+      - name: Validate AU (auval)
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$ARTEFACTS/AU/$PLUGIN_NAME.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -v aufx Crlm Cruz
+
+      - name: Package
+        run: |
+          mkdir -p "dist/$ZIP_NAME"
+          cp -R "$ARTEFACTS/VST3/$PLUGIN_NAME.vst3" "$ARTEFACTS/AU/$PLUGIN_NAME.component" "dist/$ZIP_NAME/"
+          cp plugins/CruzLimiter/packaging/install.sh plugins/CruzLimiter/INSTALL.md "dist/$ZIP_NAME/"
+          cd dist && ditto -c -k --sequesterRsrc --keepParent "$ZIP_NAME" "$ZIP_NAME.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: dist/${{ env.ZIP_NAME }}.zip
+
+      - name: Add to "Latest builds" release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Other plugins share this release, so only replace our own zip.
+          gh release view latest > /dev/null 2>&1 || gh release create latest \
+            --target "$GITHUB_SHA" \
+            --title "Latest builds" \
+            --notes "Each plugin's newest Mac build. Install steps are in INSTALL.md inside each zip." || true
+          gh release upload latest "dist/$ZIP_NAME.zip" --clobber

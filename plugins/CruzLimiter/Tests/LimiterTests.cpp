@@ -129,7 +129,7 @@ void testCeiling()
             for (float attack : { 0.0f, 60.0f, 100.0f })
                 for (bool truePeak : { false, true })
                 {
-                    if (os >= 3 && attack == 60.0f)
+                    if (os >= 3 && juce::approximatelyEqual (attack, 60.0f))
                         continue; // keep the run short; the other attack settings cover these
 
                     cruz::LimiterEngine engine;

@@ -73,13 +73,14 @@ jobs:
           name: ${{ env.ZIP_NAME }}
           path: dist/${{ env.ZIP_NAME }}.zip
 
-      - name: Add to the "Latest build" release
+      - name: Add to "Latest builds" release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Other plugins share this release, so only replace our own zip.
           gh release view latest > /dev/null 2>&1 || gh release create latest \
             --target "$GITHUB_SHA" \
-            --title "Latest build" \
-            --notes "Latest build of each Cruz plugin. Install steps are in INSTALL.md inside each zip."
+            --title "Latest builds" \
+            --notes "Each plugin's newest Mac build. Install steps are in INSTALL.md inside each zip." || true
           gh release upload latest "dist/$ZIP_NAME.zip" --clobber

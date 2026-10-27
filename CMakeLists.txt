@@ -63,3 +63,4 @@ add_test(NAME dsp COMMAND CruzEQTests)
 
 add_subdirectory(plugins/CruzOpto)
 add_subdirectory(plugins/CruzFET)
+add_subdirectory(plugins/CruzVerb)

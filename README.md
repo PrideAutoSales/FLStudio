@@ -21,8 +21,8 @@ appear under the **Artifacts** section of each run on the **Actions** tab.
 3. **Feature parity** (in progress):
    - 3a (done): per-band stereo placement (left, right, mid, side), slopes for
      shelves, notches and band passes, a flat tilt shape, auto gain and gain scale.
-   - 3b (this version): dynamic EQ on every bell, shelf and tilt band.
-   - 3c: linear phase and natural phase modes.
+   - 3b (done): dynamic EQ on every bell, shelf and tilt band.
+   - 3c (this version): linear phase and natural phase modes.
    - 3d: EQ match and spectral dynamics.
 4. **Polish and benchmark**: CPU, latency and sound compared side by side in real sessions.
 
@@ -52,6 +52,17 @@ appear under the **Artifacts** section of each run on the **Actions** tab.
   can move through, a line from its dot to the end of the range, and a small dot where
   its gain is right now. The band listens to the plugin's input, so the order of the
   bands does not matter.
+- **Processing mode:** the box at the top picks how the EQ works.
+  - **Zero Latency** (default) adds no delay, so it suits tracking and live playing.
+  - **Natural Phase** shapes the sound like an analog EQ, with the same tone in the
+    highs as in the lows. It adds a short delay of 4 ms at 48 kHz.
+  - **Linear Phase** changes the tone without shifting the timing between frequencies.
+    It suits mastering and parallel tracks. The box next to it sets the resolution:
+    higher settings keep narrow low bands exact but add more delay (from about 24 ms on
+    Low to 344 ms on Maximum at 48 kHz).
+
+  The delay is shown next to the boxes, and FL Studio makes up for it automatically.
+  Switching modes mutes the sound for a moment while the new filters are built.
 
 ## How the filters work
 
@@ -60,6 +71,13 @@ follows the ideal analog curve all the way up to the top of the spectrum, instea
 bunching up near 20 kHz like many digital EQs. The engine runs in double precision with
 smoothed parameter changes. `Tests/DspTests.cpp` checks every shape against its analog
 curve, checks stability across the full parameter range, and measures CPU use.
+
+Natural and linear phase turn the whole EQ, including mid/side bands and dynamic bands
+as they move, into long FIR filters. A background thread rebuilds them whenever a band
+changes. The audio thread applies them with a partitioned FFT convolver that crossfades
+to each new set, so moving a band never clicks. The tests check each mode against the
+analog curve (linear within 0.25 dB, natural within 0.2 dB and 2 degrees) and check the
+convolver against direct convolution.
 
 ## Building it yourself (optional)
 

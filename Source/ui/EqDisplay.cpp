@@ -17,6 +17,11 @@ bool operator!= (const BandParams& a, const BandParams& b) noexcept
         || ! exactlyEqual (a.gainDb, b.gainDb) || ! exactlyEqual (a.q, b.q);
 }
 
+bool operator!= (const DynamicParams& a, const DynamicParams& b) noexcept
+{
+    return a.enabled != b.enabled || ! exactlyEqual (a.rangeDb, b.rangeDb);
+}
+
 const char* placementLetter (Placement p) noexcept
 {
     switch (p)
@@ -109,6 +114,7 @@ void EqDisplay::setRangeDb (float newRange)
 void EqDisplay::setSelectedBand (int band)
 {
     selected = band;
+    curvesDirty = true;
     repaint();
 }
 
@@ -118,6 +124,7 @@ void EqDisplay::select (int band)
         return;
 
     selected = band;
+    curvesDirty = true;
 
     if (onSelectionChanged != nullptr)
         onSelectionChanged (band);
@@ -161,10 +168,15 @@ bool EqDisplay::refreshBandCache()
     for (int b = 0; b < Params::numBands; ++b)
     {
         const auto& refs = processor.getBand (b);
-        const CachedBand now { refs.isUsed(), refs.isActive(), refs.read(), refs.placement() };
+        const CachedBand now { refs.isUsed(), refs.isActive(), refs.read(), refs.placement(), refs.dynamics(), processor.getDynamicGainDb (b) };
         auto& cached = cache[(size_t) b];
 
-        if (now.used != cached.used || now.active != cached.active || now.params != cached.params || now.placement != cached.placement)
+        // The live gain move only redraws when it has moved visibly.
+        const bool dynamicMoved = std::abs (now.dynamicDb - cached.dynamicDb) > 0.05f
+                               || (exactlyEqual (now.dynamicDb, 0.0f) != exactlyEqual (cached.dynamicDb, 0.0f));
+
+        if (now.used != cached.used || now.active != cached.active || now.params != cached.params || now.placement != cached.placement
+            || now.dynamics != cached.dynamics || dynamicMoved)
         {
             cached = now;
             changed = true;
@@ -182,6 +194,9 @@ void EqDisplay::recomputeCurves()
     for (auto& total : totalCurves)
         total.assign (n, 0.0f);
 
+    staticCurve.clear();
+    rangeCurve.clear();
+
     bool usesLeftRight = false, usesMidSide = false;
 
     for (int b = 0; b < Params::numBands; ++b)
@@ -196,9 +211,26 @@ void EqDisplay::recomputeCurves()
         }
 
         auto params = band.params;
-        params.gainDb *= gainScale;
+        params.gainDb = params.gainDb * gainScale + (band.isDynamic() && band.active ? band.dynamicDb : 0.0);
         const auto design = designBand (params, sampleRate);
         curve.resize (n);
+
+        if (b == selected && band.isDynamic())
+        {
+            auto quiet = band.params, loud = band.params;
+            quiet.gainDb *= gainScale;
+            loud.gainDb = (loud.gainDb + band.dynamics.rangeDb) * gainScale;
+            const auto quietDesign = designBand (quiet, sampleRate), loudDesign = designBand (loud, sampleRate);
+            staticCurve.resize (n);
+            rangeCurve.resize (n);
+
+            for (size_t i = 0; i < n; ++i)
+            {
+                const double w = std::min (2.0 * pi * pointFreqs[i] / sampleRate, 0.9999 * pi);
+                staticCurve[i] = (float) quietDesign.magnitudeDb (w);
+                rangeCurve[i] = (float) loudDesign.magnitudeDb (w);
+            }
+        }
 
         if (band.active)
         {
@@ -388,6 +420,7 @@ void EqDisplay::showBandMenu (int band)
     const int currentSlope = juce::roundToInt (paramValue (band, BandField::slope));
     const int currentPlace = juce::roundToInt (paramValue (band, BandField::place));
     const bool bypassed = paramValue (band, BandField::bypass) >= 0.5f;
+    const bool dynamic = paramValue (band, BandField::dynamic) >= 0.5f;
 
     juce::PopupMenu shapes, slopes, places, menu;
 
@@ -406,10 +439,11 @@ void EqDisplay::showBandMenu (int band)
     menu.addSubMenu ("Stereo placement", places);
     menu.addSeparator();
     menu.addItem (1, "Bypass", true, bypassed);
+    menu.addItem (3, "Dynamic", shapeUsesDynamics ((Shape) currentShape), dynamic);
     menu.addItem (2, "Remove band");
 
     menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition(),
-                        [safe = juce::Component::SafePointer<EqDisplay> (this), band, bypassed] (int result)
+                        [safe = juce::Component::SafePointer<EqDisplay> (this), band, bypassed, dynamic] (int result)
                         {
                             if (safe == nullptr || result == 0)
                                 return;
@@ -424,6 +458,8 @@ void EqDisplay::showBandMenu (int band)
                                 safe->setParamGesture (band, BandField::bypass, bypassed ? 0.0f : 1.0f);
                             else if (result == 2)
                                 safe->removeBand (band);
+                            else if (result == 3)
+                                safe->setParamGesture (band, BandField::dynamic, dynamic ? 0.0f : 1.0f);
                         });
 }
 
@@ -698,6 +734,28 @@ void EqDisplay::drawCurves (juce::Graphics& g, juce::Rectangle<float> area)
         return path;
     };
 
+    if (selected >= 0 && ! staticCurve.empty() && staticCurve.size() == rangeCurve.size())
+    {
+        // Shaded area the selected dynamic band can move through.
+        juce::Path shaded;
+        shaded.startNewSubPath (xForFreq (pointFreqs.front()), yForDb (staticCurve.front()));
+        for (size_t i = 1; i < staticCurve.size(); ++i)
+            shaded.lineTo (xForFreq (pointFreqs[i]), yForDb (staticCurve[i]));
+        for (size_t i = rangeCurve.size(); i-- > 0;)
+            shaded.lineTo (xForFreq (pointFreqs[i]), yForDb (rangeCurve[i]));
+        shaded.closeSubPath();
+
+        const auto colour = Theme::band (selected);
+        g.setColour (colour.withAlpha (0.13f));
+        g.fillPath (shaded);
+
+        juce::Path edge = curvePath (rangeCurve, false), dashed;
+        const float dashes[] { 4.0f, 3.0f };
+        juce::PathStrokeType (1.0f).createDashedStroke (dashed, edge, dashes, 2);
+        g.setColour (colour.withAlpha (0.6f));
+        g.fillPath (dashed);
+    }
+
     for (int b : { hovered != selected ? hovered : -1, selected })
     {
         if (b < 0 || bandCurves[(size_t) b].empty())
@@ -753,6 +811,27 @@ void EqDisplay::drawNodes (juce::Graphics& g)
         const bool isSelected = b == selected;
         const float radius = (isSelected ? 7.5f : 6.0f) + (b == hovered ? 1.0f : 0.0f);
         const auto circle = juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (pos);
+        const auto& c = cache[(size_t) b];
+
+        if (c.isDynamic())
+        {
+            // A line from the dot to where the full range would take it.
+            const auto area = plotArea();
+            const float endY = juce::jlimit (area.getY() + 4.0f, area.getBottom() - 4.0f,
+                                             yForDb ((c.params.gainDb + c.dynamics.rangeDb) * gainScale));
+            const float liveY = juce::jlimit (area.getY() + 4.0f, area.getBottom() - 4.0f,
+                                              yForDb (c.params.gainDb * gainScale + c.dynamicDb));
+            g.setColour (colour.withAlpha (0.55f));
+            g.drawLine (pos.x, pos.y, pos.x, endY, 1.5f);
+            g.drawLine (pos.x - 5.0f, endY, pos.x + 5.0f, endY, 1.5f);
+
+            // Where the gain is right now.
+            if (std::abs (liveY - pos.y) > 1.0f)
+            {
+                g.setColour (colour);
+                g.fillEllipse (juce::Rectangle<float> (5.0f, 5.0f).withCentre ({ pos.x, liveY }));
+            }
+        }
 
         if (cache[(size_t) b].active)
         {
@@ -803,6 +882,8 @@ void EqDisplay::drawBandInfo (juce::Graphics& g, juce::Rectangle<float> area)
         text << "   Q " << juce::String (p.q, 2);
     if (cache[(size_t) b].placement != Placement::stereo)
         text << "   " << Params::placementNames()[(int) cache[(size_t) b].placement];
+    if (cache[(size_t) b].isDynamic())
+        text << "   Dyn " << formatGain (cache[(size_t) b].dynamics.rangeDb);
 
     const juce::Font font { juce::FontOptions (12.0f) };
     const float width = juce::GlyphArrangement::getStringWidth (font, text) + 16.0f;

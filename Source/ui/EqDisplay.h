@@ -64,6 +64,7 @@ private:
     void drawGrid (juce::Graphics&, juce::Rectangle<float> area);
     void drawAnalyzer (juce::Graphics&, juce::Rectangle<float> area);
     void drawCurves (juce::Graphics&, juce::Rectangle<float> area);
+    void drawLegend (juce::Graphics&, juce::Rectangle<float> area);
     void drawNodes (juce::Graphics&);
     void drawBandInfo (juce::Graphics&, juce::Rectangle<float> area);
 
@@ -72,16 +73,24 @@ private:
 
     SpectrumAnalyzer preAnalyzer, postAnalyzer;
     std::vector<double> pointFreqs;
-    std::vector<float> preLevels, postLevels, totalCurve;
+    std::vector<float> preLevels, postLevels;
+    // Total curve for each channel group: left (or mid) and right (or side).
+    // They differ only when some band is not on both channels.
+    std::array<std::vector<float>, 2> totalCurves;
+    bool splitCurves = false;
+    juce::String groupNames[2];
     std::array<std::vector<float>, Params::numBands> bandCurves;
 
     struct CachedBand
     {
         bool used = false, active = false;
-        cruz::dsp::BandParams params;
+        cruz::dsp::BandParams params; // as set on the band, before gain scale
+        cruz::dsp::Placement placement = cruz::dsp::Placement::stereo;
     };
 
     std::array<CachedBand, Params::numBands> cache;
+    double gainScale = 1.0;
+    double vScale() const noexcept { return gainScale > 0.05 ? gainScale : 1.0; }
     double cachedSampleRate = 0.0;
     bool curvesDirty = true;
     int preIdleFrames = 0, postIdleFrames = 0;

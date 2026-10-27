@@ -28,12 +28,14 @@ enum class Shape
     highCut,
     notch,
     bandPass,
-    tiltShelf
+    tiltShelf,
+    flatTilt
 };
 
-inline constexpr int numShapes = 8;
+inline constexpr int numShapes = 9;
 inline constexpr std::array<int, 9> slopesDbPerOct { 6, 12, 18, 24, 30, 36, 48, 72, 96 };
 inline constexpr int maxSections = 8;
+inline constexpr int maxAnalogSections = 16;
 
 inline constexpr double minFreqHz = 10.0;
 inline constexpr double maxFreqHz = 30000.0;
@@ -52,12 +54,17 @@ inline bool exactlyEqual (double a, double b) noexcept
 
 inline bool shapeUsesGain (Shape s) noexcept
 {
-    return s == Shape::bell || s == Shape::lowShelf || s == Shape::highShelf || s == Shape::tiltShelf;
+    return s == Shape::bell || s == Shape::lowShelf || s == Shape::highShelf || s == Shape::tiltShelf || s == Shape::flatTilt;
 }
 
 inline bool shapeUsesSlope (Shape s) noexcept
 {
-    return s == Shape::lowCut || s == Shape::highCut;
+    return s != Shape::bell && s != Shape::flatTilt;
+}
+
+inline bool shapeUsesQ (Shape s) noexcept
+{
+    return s != Shape::flatTilt;
 }
 
 struct BiquadCoeffs
@@ -275,29 +282,89 @@ struct BandDesign
     }
 };
 
-// Analog sections for a band, all normalised to the band frequency.
+// Analog sections for a band, all normalised to the band frequency, plus an
+// overall amplitude factor.
 struct AnalogDesign
 {
-    std::array<AnalogSection, maxSections> sections {};
+    std::array<AnalogSection, maxAnalogSections> sections {};
     int numSections = 0;
+    double gain = 1.0;
 
     void add (const AnalogSection& s) noexcept { sections[(size_t) numSections++] = s; }
 
     double powerAt (double x) const noexcept
     {
-        double p = 1.0;
+        double p = gain * gain;
         for (int i = 0; i < numSections; ++i)
             p *= sections[(size_t) i].power (x);
         return p;
     }
 };
 
+inline AnalogSection swapped (const AnalogSection& s) noexcept
+{
+    return { s.d2, s.d1, s.d0, s.n2, s.n1, s.n0 };
+}
+
+inline int orderForSlope (int slopeDbPerOct) noexcept
+{
+    return std::clamp (slopeDbPerOct / 6, 1, 2 * maxSections);
+}
+
+// Q of section k (from 1) of an order-n Butterworth cascade. The band's Q adds
+// resonance to the sharpest section, so the default Q is maximally flat.
+inline double butterworthQ (int k, int order, double q) noexcept
+{
+    const double sectionQ = 1.0 / (2.0 * std::sin ((2 * k - 1) * pi / (2.0 * order)));
+    return k == 1 ? sectionQ * std::clamp (q, minQ, maxQ) / defaultQ : sectionQ;
+}
+
+// Low shelf boost of any order: Butterworth poles below the band frequency and
+// matching zeros above it, so the curve passes through half its gain (in dB)
+// at the band frequency and gets steeper with the order. Order 2 is the
+// classic 12 dB/oct shelf.
+inline AnalogDesign lowShelfBoost (double gainDb, double q, int order) noexcept
+{
+    AnalogDesign d;
+    const double g = std::pow (10.0, std::abs (gainDb) / 20.0);
+    const double z = std::pow (g, 1.0 / (2.0 * order));
+    const double p = 1.0 / z;
+
+    if (order % 2 == 1)
+        d.add ({ 0.0, 1.0, z, 0.0, 1.0, p });
+
+    for (int k = 1; k <= order / 2; ++k)
+    {
+        const double sq = butterworthQ (k, order, q);
+        d.add ({ 1.0, z / sq, z * z, 1.0, p / sq, p * p });
+    }
+
+    return d;
+}
+
+// Flat tilt: a constant dB/oct slope through the band frequency, built from
+// first-order shelves one octave apart from 2.5 Hz to 160 kHz, so the slope
+// is even across the audible range. The gain is the total tilt between 20 Hz
+// and 20 kHz.
+inline constexpr int flatTiltShelves = 16;
+
+inline double flatTiltShelfHz (int i) noexcept
+{
+    return 2.5 * std::pow (2.0, i + 0.5);
+}
+
+inline double flatTiltStepGain (double gainDb) noexcept
+{
+    return std::pow (10.0, gainDb / std::log2 (1000.0) / 20.0);
+}
+
 inline AnalogDesign analogPrototype (const BandParams& p) noexcept
 {
     AnalogDesign d;
     const double q = std::clamp (p.q, minQ, maxQ);
     const double A = std::pow (10.0, p.gainDb / 40.0);
-    const double sqrtA = std::sqrt (A);
+    const double g = std::pow (10.0, std::abs (p.gainDb) / 20.0);
+    const bool cut = p.gainDb < 0.0;
 
     switch (p.shape)
     {
@@ -306,47 +373,66 @@ inline AnalogDesign analogPrototype (const BandParams& p) noexcept
             break;
 
         case Shape::lowShelf:
-            d.add ({ A, A * sqrtA / q, A * A, A, sqrtA / q, 1.0 });
-            break;
-
         case Shape::highShelf:
-            d.add ({ A * A, A * sqrtA / q, A, 1.0, sqrtA / q, A });
-            break;
-
         case Shape::tiltShelf:
-            // High shelf with its gain split evenly around the band frequency.
-            d.add ({ A, sqrtA / q, 1.0, 1.0, sqrtA / q, A });
+        {
+            // A cut is the boost turned upside down, and a high shelf is a
+            // low shelf flipped and lifted by its gain.
+            const auto boost = lowShelfBoost (p.gainDb, q, orderForSlope (p.slopeDbPerOct));
+            const bool flip = (p.shape == Shape::lowShelf) == cut;
+
+            for (int i = 0; i < boost.numSections; ++i)
+                d.add (flip ? swapped (boost.sections[(size_t) i]) : boost.sections[(size_t) i]);
+
+            if (p.shape == Shape::highShelf)
+                d.gain = cut ? 1.0 / g : g;
+            else if (p.shape == Shape::tiltShelf)
+                d.gain = cut ? 1.0 / std::sqrt (g) : std::sqrt (g);
             break;
+        }
+
+        case Shape::flatTilt:
+        {
+            const double step = flatTiltStepGain (p.gainDb);
+            const double rootStep = std::sqrt (step);
+
+            for (int i = 0; i < flatTiltShelves; ++i)
+            {
+                const double c = flatTiltShelfHz (i) / p.freqHz;
+                d.add ({ 0.0, step, c * rootStep, 0.0, 1.0, c * rootStep });
+            }
+
+            d.gain = 1.0 / std::sqrt (d.powerAt (1.0));
+            break;
+        }
 
         case Shape::notch:
-            d.add ({ 1.0, 0.0, 1.0, 1.0, 1.0 / q, 1.0 });
-            break;
-
         case Shape::bandPass:
-            d.add ({ 0.0, 1.0 / q, 0.0, 1.0, 1.0 / q, 1.0 });
+        {
+            // Steeper slopes cascade identical sections.
+            const int copies = std::clamp (p.slopeDbPerOct / 12, 1, maxSections);
+            const AnalogSection section = p.shape == Shape::notch ? AnalogSection { 1.0, 0.0, 1.0, 1.0, 1.0 / q, 1.0 }
+                                                                  : AnalogSection { 0.0, 1.0 / q, 0.0, 1.0, 1.0 / q, 1.0 };
+            for (int i = 0; i < copies; ++i)
+                d.add (section);
             break;
+        }
 
         case Shape::lowCut:
         case Shape::highCut:
         {
-            // Butterworth cascade. Q adds resonance to the sharpest section, so
-            // the default Q gives a flat (maximally flat) response.
             const bool highPass = p.shape == Shape::lowCut;
-            const int order = std::clamp (p.slopeDbPerOct / 6, 1, 2 * maxSections);
-            const int pairs = order / 2;
+            const int order = orderForSlope (p.slopeDbPerOct);
 
             if (order % 2 == 1)
                 d.add (highPass ? AnalogSection { 0.0, 1.0, 0.0, 0.0, 1.0, 1.0 }
                                 : AnalogSection { 0.0, 0.0, 1.0, 0.0, 1.0, 1.0 });
 
-            for (int k = 1; k <= pairs; ++k)
+            for (int k = 1; k <= order / 2; ++k)
             {
-                double sectionQ = 1.0 / (2.0 * std::sin ((2 * k - 1) * pi / (2.0 * order)));
-                if (k == 1)
-                    sectionQ *= q / defaultQ;
-
-                d.add (highPass ? AnalogSection { 1.0, 0.0, 0.0, 1.0, 1.0 / sectionQ, 1.0 }
-                                : AnalogSection { 0.0, 0.0, 1.0, 1.0, 1.0 / sectionQ, 1.0 });
+                const double sq = butterworthQ (k, order, q);
+                d.add (highPass ? AnalogSection { 1.0, 0.0, 0.0, 1.0, 1.0 / sq, 1.0 }
+                                : AnalogSection { 0.0, 0.0, 1.0, 1.0, 1.0 / sq, 1.0 });
             }
             break;
         }
@@ -355,19 +441,19 @@ inline AnalogDesign analogPrototype (const BandParams& p) noexcept
     return d;
 }
 
+// Product of two first-order sections as one biquad.
+inline BiquadCoeffs combined (const BiquadCoeffs& x, const BiquadCoeffs& y) noexcept
+{
+    return { x.b0 * y.b0, x.b0 * y.b1 + x.b1 * y.b0, x.b1 * y.b1, x.a1 + y.a1, x.a1 * y.a1 };
+}
+
 inline BandDesign designBand (const BandParams& p, double sampleRate) noexcept
 {
     const double w0 = 2.0 * pi * std::clamp (p.freqHz, minFreqHz, maxFreqHz) / sampleRate;
-    const double absGainDb = std::abs (p.gainDb);
+    const double g = std::pow (10.0, std::abs (p.gainDb) / 20.0);
     const bool cut = p.gainDb < 0.0;
 
     BandDesign d;
-
-    const auto single = [&d] (const BiquadCoeffs& c)
-    {
-        d.sections[0] = c;
-        d.numSections = 1;
-    };
 
     // Every gain shape is built from a boost, which matched coefficients can
     // always realise. Cuts are exact inverses of boosts in the analog domain,
@@ -377,9 +463,10 @@ inline BandDesign designBand (const BandParams& p, double sampleRate) noexcept
         case Shape::bell:
         {
             auto boost = p;
-            boost.gainDb = absGainDb;
+            boost.gainDb = std::abs (p.gainDb);
             const auto c = matchSecondOrder (analogPrototype (boost).sections[0], w0);
-            single (cut ? inverse (c) : c);
+            d.sections[0] = cut ? inverse (c) : c;
+            d.numSections = 1;
             break;
         }
 
@@ -387,16 +474,41 @@ inline BandDesign designBand (const BandParams& p, double sampleRate) noexcept
         case Shape::highShelf:
         case Shape::tiltShelf:
         {
-            BandParams lowBoost { Shape::lowShelf, p.freqHz, absGainDb, p.q, p.slopeDbPerOct };
-            const auto low = matchSecondOrder (analogPrototype (lowBoost).sections[0], w0);
-            const double g = std::pow (10.0, absGainDb / 20.0);
+            const auto boost = lowShelfBoost (p.gainDb, p.q, orderForSlope (p.slopeDbPerOct));
+            d.numSections = boost.numSections;
 
-            if (p.shape == Shape::lowShelf)
-                single (cut ? inverse (low) : low);
-            else if (p.shape == Shape::highShelf)
-                single (cut ? scaled (low, 1.0 / g) : scaled (inverse (low), g));
-            else
-                single (cut ? scaled (low, 1.0 / std::sqrt (g)) : scaled (inverse (low), std::sqrt (g)));
+            for (int i = 0; i < boost.numSections; ++i)
+            {
+                const auto& section = boost.sections[(size_t) i];
+                const auto low = matchSection (section, w0);
+                const double sectionGain = std::sqrt (section.power (0.0));
+
+                if (p.shape == Shape::lowShelf)
+                    d.sections[(size_t) i] = cut ? inverse (low) : low;
+                else
+                    d.sections[(size_t) i] = cut ? scaled (low, 1.0 / sectionGain) : scaled (inverse (low), sectionGain);
+            }
+
+            if (p.shape == Shape::tiltShelf)
+                d.sections[0] = scaled (d.sections[0], cut ? std::sqrt (g) : 1.0 / std::sqrt (g));
+            break;
+        }
+
+        case Shape::flatTilt:
+        {
+            // Each shelf is matched at its own frequency, then pairs share a biquad.
+            const double step = flatTiltStepGain (p.gainDb);
+            const double rootStep = std::sqrt (step);
+            const AnalogSection shelf { 0.0, step, rootStep, 0.0, 1.0, rootStep };
+
+            for (int i = 0; i < flatTiltShelves; i += 2)
+            {
+                const auto a = matchFirstOrder (shelf, 2.0 * pi * flatTiltShelfHz (i) / sampleRate);
+                const auto b = matchFirstOrder (shelf, 2.0 * pi * flatTiltShelfHz (i + 1) / sampleRate);
+                d.sections[(size_t) d.numSections++] = combined (a, b);
+            }
+
+            d.sections[0] = scaled (d.sections[0], 1.0 / std::abs (d.response (std::min (w0, 0.9999 * pi))));
             break;
         }
 

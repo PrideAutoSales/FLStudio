@@ -16,6 +16,29 @@ bool operator!= (const BandParams& a, const BandParams& b) noexcept
     return a.shape != b.shape || a.slopeDbPerOct != b.slopeDbPerOct || ! exactlyEqual (a.freqHz, b.freqHz)
         || ! exactlyEqual (a.gainDb, b.gainDb) || ! exactlyEqual (a.q, b.q);
 }
+
+const char* placementLetter (Placement p) noexcept
+{
+    switch (p)
+    {
+        case Placement::left: return "L";
+        case Placement::right: return "R";
+        case Placement::mid: return "M";
+        case Placement::side: return "S";
+        case Placement::stereo: break;
+    }
+    return "";
+}
+
+// Which of the two group curves a band belongs to: 0 = left/mid, 1 = right/side.
+bool inGroup (Placement p, int group) noexcept
+{
+    if (p == Placement::stereo)
+        return true;
+
+    const bool first = p == Placement::left || p == Placement::mid;
+    return first == (group == 0);
+}
 } // namespace
 
 EqDisplay::EqDisplay (CruzEQAudioProcessor& p)
@@ -127,13 +150,21 @@ bool EqDisplay::refreshBandCache()
         changed = true;
     }
 
+    const double scale = state.getRawParameterValue (Params::gainScale)->load() / 100.0;
+
+    if (! exactlyEqual (scale, gainScale))
+    {
+        gainScale = scale;
+        changed = true;
+    }
+
     for (int b = 0; b < Params::numBands; ++b)
     {
         const auto& refs = processor.getBand (b);
-        const CachedBand now { refs.isUsed(), refs.isActive(), refs.read() };
+        const CachedBand now { refs.isUsed(), refs.isActive(), refs.read(), refs.placement() };
         auto& cached = cache[(size_t) b];
 
-        if (now.used != cached.used || now.active != cached.active || now.params != cached.params)
+        if (now.used != cached.used || now.active != cached.active || now.params != cached.params || now.placement != cached.placement)
         {
             cached = now;
             changed = true;
@@ -147,7 +178,11 @@ void EqDisplay::recomputeCurves()
 {
     const double sampleRate = cachedSampleRate > 0.0 ? cachedSampleRate : 48000.0;
     const size_t n = pointFreqs.size();
-    totalCurve.assign (n, 0.0f);
+
+    for (auto& total : totalCurves)
+        total.assign (n, 0.0f);
+
+    bool usesLeftRight = false, usesMidSide = false;
 
     for (int b = 0; b < Params::numBands; ++b)
     {
@@ -160,8 +195,16 @@ void EqDisplay::recomputeCurves()
             continue;
         }
 
-        const auto design = designBand (band.params, sampleRate);
+        auto params = band.params;
+        params.gainDb *= gainScale;
+        const auto design = designBand (params, sampleRate);
         curve.resize (n);
+
+        if (band.active)
+        {
+            usesLeftRight |= band.placement == Placement::left || band.placement == Placement::right;
+            usesMidSide |= band.placement == Placement::mid || band.placement == Placement::side;
+        }
 
         for (size_t i = 0; i < n; ++i)
         {
@@ -170,10 +213,15 @@ void EqDisplay::recomputeCurves()
             curve[i] = (float) design.magnitudeDb (w);
 
             if (band.active)
-                totalCurve[i] += curve[i];
+                for (int group = 0; group < 2; ++group)
+                    if (inGroup (band.placement, group))
+                        totalCurves[(size_t) group][i] += curve[i];
         }
     }
 
+    splitCurves = usesLeftRight || usesMidSide;
+    groupNames[0] = usesLeftRight && usesMidSide ? "Left + Mid" : usesLeftRight ? "Left" : "Mid";
+    groupNames[1] = usesLeftRight && usesMidSide ? "Right + Side" : usesLeftRight ? "Right" : "Side";
     curvesDirty = false;
 }
 
@@ -222,9 +270,9 @@ juce::Point<float> EqDisplay::nodePosition (int band) const noexcept
 
     if (shapeUsesGain (c.params.shape))
     {
-        db = c.params.gainDb;
+        db = c.params.gainDb * gainScale;
     }
-    else if (shapeUsesSlope (c.params.shape) && ! bandCurves[(size_t) band].empty())
+    else if ((c.params.shape == Shape::lowCut || c.params.shape == Shape::highCut) && ! bandCurves[(size_t) band].empty())
     {
         // Cuts sit on their own curve at the cutoff frequency.
         const auto& curve = bandCurves[(size_t) band];
@@ -307,12 +355,13 @@ void EqDisplay::createBandAt (juce::Point<float> position)
         return;
 
     const double freq = std::clamp (freqForX (position.x), minFreqHz, maxFreqHz);
-    const double gain = std::clamp (std::round (dbForY (position.y) * 10.0) / 10.0, minGainDb, maxGainDb);
+    const double gain = std::clamp (std::round (dbForY (position.y) / vScale() * 10.0) / 10.0, minGainDb, maxGainDb);
 
     setParamGesture (band, BandField::shape, 0.0f);
     setParamGesture (band, BandField::freq, (float) freq);
     setParamGesture (band, BandField::gain, (float) gain);
     setParamGesture (band, BandField::q, 1.0f);
+    setParamGesture (band, BandField::place, 0.0f);
     setParamGesture (band, BandField::bypass, 0.0f);
     setParamGesture (band, BandField::used, 1.0f);
 
@@ -337,9 +386,10 @@ void EqDisplay::showBandMenu (int band)
 {
     const int currentShape = juce::roundToInt (paramValue (band, BandField::shape));
     const int currentSlope = juce::roundToInt (paramValue (band, BandField::slope));
+    const int currentPlace = juce::roundToInt (paramValue (band, BandField::place));
     const bool bypassed = paramValue (band, BandField::bypass) >= 0.5f;
 
-    juce::PopupMenu shapes, slopes, menu;
+    juce::PopupMenu shapes, slopes, places, menu;
 
     for (int i = 0; i < Params::shapeNames().size(); ++i)
         shapes.addItem (100 + i, Params::shapeNames()[i], true, i == currentShape);
@@ -347,9 +397,13 @@ void EqDisplay::showBandMenu (int band)
     for (int i = 0; i < Params::slopeNames().size(); ++i)
         slopes.addItem (200 + i, Params::slopeNames()[i], true, i == currentSlope);
 
+    for (int i = 0; i < Params::placementNames().size(); ++i)
+        places.addItem (300 + i, Params::placementNames()[i], true, i == currentPlace);
+
     menu.addSectionHeader ("Band " + juce::String (band + 1));
     menu.addSubMenu ("Shape", shapes);
     menu.addSubMenu ("Slope", slopes, shapeUsesSlope ((Shape) currentShape));
+    menu.addSubMenu ("Stereo placement", places);
     menu.addSeparator();
     menu.addItem (1, "Bypass", true, bypassed);
     menu.addItem (2, "Remove band");
@@ -360,7 +414,9 @@ void EqDisplay::showBandMenu (int band)
                             if (safe == nullptr || result == 0)
                                 return;
 
-                            if (result >= 200)
+                            if (result >= 300)
+                                safe->setParamGesture (band, BandField::place, (float) (result - 300));
+                            else if (result >= 200)
                                 safe->setParamGesture (band, BandField::slope, (float) (result - 200));
                             else if (result >= 100)
                                 safe->setParamGesture (band, BandField::shape, (float) (result - 100));
@@ -440,7 +496,8 @@ void EqDisplay::mouseDrag (const juce::MouseEvent& e)
 
     if (shapeUsesGain (cache[(size_t) dragging].params.shape))
     {
-        const double dbPerPixel = rangeDb / (area.getHeight() * 0.5 - 14.0);
+        // Divide by gain scale so the dot follows the mouse.
+        const double dbPerPixel = rangeDb / (area.getHeight() * 0.5 - 14.0) / vScale();
         setParam (dragging, BandField::gain, (float) std::clamp (anchor.gainDb - delta.y * dbPerPixel, minGainDb, maxGainDb));
     }
     else
@@ -501,6 +558,7 @@ void EqDisplay::paint (juce::Graphics& g)
         drawCurves (g, area);
     }
 
+    drawLegend (g, area);
     drawNodes (g);
     drawBandInfo (g, area);
 
@@ -653,10 +711,37 @@ void EqDisplay::drawCurves (juce::Graphics& g, juce::Rectangle<float> area)
         g.strokePath (curvePath (bandCurves[(size_t) b], false), juce::PathStrokeType (1.2f));
     }
 
+    const juce::PathStrokeType stroke { 2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded };
+
+    if (splitCurves)
+    {
+        g.setColour (Theme::curveAlt.withAlpha (0.04f));
+        g.fillPath (curvePath (totalCurves[1], true));
+        g.setColour (Theme::curveAlt);
+        g.strokePath (curvePath (totalCurves[1], false), stroke);
+    }
+
     g.setColour (Theme::curve.withAlpha (0.05f));
-    g.fillPath (curvePath (totalCurve, true));
+    g.fillPath (curvePath (totalCurves[0], true));
     g.setColour (Theme::curve);
-    g.strokePath (curvePath (totalCurve, false), juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.strokePath (curvePath (totalCurves[0], false), stroke);
+}
+
+void EqDisplay::drawLegend (juce::Graphics& g, juce::Rectangle<float> area)
+{
+    if (! splitCurves)
+        return;
+
+    auto row = juce::Rectangle<float> (area.getX() + 10.0f, area.getY() + 8.0f, 150.0f, 16.0f);
+    g.setFont (juce::FontOptions (12.0f));
+
+    for (int group = 0; group < 2; ++group)
+    {
+        g.setColour (group == 0 ? Theme::curve : Theme::curveAlt);
+        g.fillRoundedRectangle (row.getX(), row.getCentreY() - 1.5f, 16.0f, 3.0f, 1.5f);
+        g.drawText (groupNames[group], row.withTrimmedLeft (22.0f), juce::Justification::centredLeft, false);
+        row.translate (0.0f, 17.0f);
+    }
 }
 
 void EqDisplay::drawNodes (juce::Graphics& g)
@@ -687,6 +772,13 @@ void EqDisplay::drawNodes (juce::Graphics& g)
             g.setColour (Theme::curve);
             g.drawEllipse (circle.expanded (2.0f), 1.5f);
         }
+
+        if (const auto* letter = placementLetter (cache[(size_t) b].placement); *letter != 0)
+        {
+            g.setColour (cache[(size_t) b].active ? Theme::display : colour);
+            g.setFont (juce::FontOptions (radius * 1.45f, juce::Font::bold));
+            g.drawText (letter, circle.translated (0.0f, 0.5f), juce::Justification::centred, false);
+        }
     };
 
     for (int b = 0; b < Params::numBands; ++b)
@@ -707,7 +799,10 @@ void EqDisplay::drawBandInfo (juce::Graphics& g, juce::Rectangle<float> area)
     auto text = Params::formatFrequency (p.freqHz);
     if (shapeUsesGain (p.shape))
         text << "   " << formatGain (p.gainDb);
-    text << "   Q " << juce::String (p.q, 2);
+    if (shapeUsesQ (p.shape))
+        text << "   Q " << juce::String (p.q, 2);
+    if (cache[(size_t) b].placement != Placement::stereo)
+        text << "   " << Params::placementNames()[(int) cache[(size_t) b].placement];
 
     const juce::Font font { juce::FontOptions (12.0f) };
     const float width = juce::GlyphArrangement::getStringWidth (font, text) + 16.0f;

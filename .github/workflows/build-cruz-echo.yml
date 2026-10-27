@@ -5,12 +5,10 @@ on:
     branches: [main]
     paths:
       - "plugins/CruzEcho/**"
-      - "CMakeLists.txt"
       - ".github/workflows/build-cruz-echo.yml"
   pull_request:
     paths:
       - "plugins/CruzEcho/**"
-      - "CMakeLists.txt"
       - ".github/workflows/build-cruz-echo.yml"
   workflow_dispatch:
 

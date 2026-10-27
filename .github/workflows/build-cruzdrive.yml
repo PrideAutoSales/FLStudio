@@ -6,12 +6,10 @@ on:
     paths:
       - "plugins/CruzDrive/**"
       - ".github/workflows/build-cruzdrive.yml"
-      - "CMakeLists.txt"
   pull_request:
     paths:
       - "plugins/CruzDrive/**"
       - ".github/workflows/build-cruzdrive.yml"
-      - "CMakeLists.txt"
   workflow_dispatch:
 
 permissions:

@@ -12,7 +12,9 @@ CruzEQAudioProcessorEditor::CruzEQAudioProcessorEditor (CruzEQAudioProcessor& p)
       processor (p),
       display (p),
       bandPanel (p),
-      outputGainAttachment (p.getState(), Params::outputGain, outputGainSlider)
+      autoGainAttachment (p.getState(), Params::autoGain, autoGainButton),
+      outputGainAttachment (p.getState(), Params::outputGain, outputGainSlider),
+      gainScaleAttachment (p.getState(), Params::gainScale, gainScaleSlider)
 {
     lookAndFeel.setColourScheme ({ Theme::background, Theme::panel, Theme::panel, Theme::dimText, Theme::text, Theme::accent,
                                    juce::Colours::black, Theme::accent.withAlpha (0.4f), Theme::text });
@@ -45,26 +47,51 @@ CruzEQAudioProcessorEditor::CruzEQAudioProcessorEditor (CruzEQAudioProcessor& p)
     };
     addAndMakeVisible (rangeBox);
 
-    rangeLabel.setText ("Scale", juce::dontSendNotification);
+    rangeLabel.setText ("Range", juce::dontSendNotification);
     rangeLabel.setColour (juce::Label::textColourId, Theme::dimText);
     rangeLabel.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (rangeLabel);
 
-    outputGainSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    outputGainSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 80, 18);
+    autoGainButton.setTooltip ("Keeps the overall level about the same while you boost or cut");
+    addAndMakeVisible (autoGainButton);
+
+    for (auto [slider, label, text] : { std::tuple { &outputGainSlider, &outputGainLabel, "Output" },
+                                        std::tuple { &gainScaleSlider, &gainScaleLabel, "Gain Scale" } })
+    {
+        slider->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 80, 18);
+        slider->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        addAndMakeVisible (slider);
+
+        label->setText (text, juce::dontSendNotification);
+        label->setJustificationType (juce::Justification::centred);
+        label->setColour (juce::Label::textColourId, Theme::dimText);
+        addAndMakeVisible (label);
+    }
+
     outputGainSlider.setTextValueSuffix (" dB");
     outputGainSlider.setDoubleClickReturnValue (true, 0.0);
-    outputGainSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    addAndMakeVisible (outputGainSlider);
-
-    outputGainLabel.setText ("Output", juce::dontSendNotification);
-    outputGainLabel.setJustificationType (juce::Justification::centred);
-    outputGainLabel.setColour (juce::Label::textColourId, Theme::dimText);
-    addAndMakeVisible (outputGainLabel);
+    gainScaleSlider.setDoubleClickReturnValue (true, 100.0);
 
     setResizable (true, true);
     setResizeLimits (760, 460, 2400, 1400);
     setSize (980, 600);
+    startTimerHz (10);
+}
+
+void CruzEQAudioProcessorEditor::timerCallback()
+{
+    // Show how much auto gain is turning the output up or down.
+    juce::String text ("Auto gain");
+
+    if (autoGainButton.getToggleState())
+    {
+        const float db = processor.getAutoGainDb();
+        text << "  " << (db > 0.0f ? "+" : "") << juce::String (db, 1) << " dB";
+    }
+
+    if (autoGainButton.getButtonText() != text)
+        autoGainButton.setButtonText (text);
 }
 
 CruzEQAudioProcessorEditor::~CruzEQAudioProcessorEditor()
@@ -94,15 +121,21 @@ void CruzEQAudioProcessorEditor::resized()
 
     rangeBox.setBounds (header.removeFromRight (120).withSizeKeepingCentre (120, 24));
     rangeLabel.setBounds (header.removeFromRight (60));
+    header.removeFromRight (16);
+    autoGainButton.setBounds (header.removeFromRight (170).withSizeKeepingCentre (170, 24));
 
     area.removeFromBottom (12);
-    auto bottom = area.removeFromBottom (130);
+    auto bottom = area.removeFromBottom (140);
     area.removeFromBottom (10);
     display.setBounds (area);
 
-    auto output = bottom.removeFromRight (110);
-    outputGainLabel.setBounds (output.removeFromTop (20));
-    outputGainSlider.setBounds (output);
+    for (auto [slider, label] : { std::pair { &outputGainSlider, &outputGainLabel }, std::pair { &gainScaleSlider, &gainScaleLabel } })
+    {
+        auto column = bottom.removeFromRight (100);
+        label->setBounds (column.removeFromTop (20));
+        slider->setBounds (column);
+    }
+
     bottom.removeFromRight (10);
     bandPanel.setBounds (bottom);
 }

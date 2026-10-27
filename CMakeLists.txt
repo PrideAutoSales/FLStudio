@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Must be set before project() to take effect.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(CruzEQ VERSION 0.2.0)
+project(CruzEQ VERSION 0.3.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -61,5 +61,6 @@ target_include_directories(CruzEQTests PRIVATE Source)
 target_link_libraries(CruzEQTests PRIVATE juce::juce_recommended_config_flags)
 add_test(NAME dsp COMMAND CruzEQTests)
 
-add_subdirectory(plugins/CruzOpto)
-add_subdirectory(plugins/CruzFET)
+# Every other plugin lives in its own folder under plugins/ and is picked up
+# automatically, so adding a plugin never needs a change to this file.
+add_subdirectory(plugins)

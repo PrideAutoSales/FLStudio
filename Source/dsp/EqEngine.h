@@ -8,10 +8,23 @@
 
 namespace cruz::dsp
 {
+// Which part of a stereo signal a band works on.
+enum class Placement
+{
+    stereo,
+    left,
+    right,
+    mid,
+    side
+};
+
+inline constexpr int numPlacements = 5;
+
 struct BandTarget
 {
     bool active = false; // band is in use and not bypassed
     BandParams params;
+    Placement placement = Placement::stereo;
 };
 
 // The zero-latency EQ: up to 24 bands of cascaded biquads, run in double
@@ -55,43 +68,86 @@ public:
         if (t.params.shape != b.target.params.shape || t.params.slopeDbPerOct != b.target.params.slopeDbPerOct)
             b.redesign = true;
 
+        if (t.placement != b.target.placement)
+            b.clearState();
+
         b.target = t;
     }
 
     void process (float* const* channels, int numChannels, int numSamples) noexcept
     {
         numChannels = std::min (numChannels, maxChannels);
+        const bool stereo = numChannels == 2;
 
         for (int start = 0; start < numSamples; start += subBlockSize)
         {
             const int n = std::min (subBlockSize, numSamples - start);
             updateCoefficients();
 
-            for (int ch = 0; ch < numChannels; ++ch)
+            std::array<double, subBlockSize> left, right;
+
+            for (int i = 0; i < n; ++i)
             {
-                std::array<double, subBlockSize> buffer;
-                float* data = channels[ch] + start;
+                left[(size_t) i] = channels[0][start + i];
+                right[(size_t) i] = stereo ? channels[1][start + i] : 0.0;
+            }
 
-                for (int i = 0; i < n; ++i)
-                    buffer[(size_t) i] = data[i];
+            for (auto& b : bands)
+            {
+                if (! b.target.active)
+                    continue;
 
-                for (auto& b : bands)
+                // A mono signal is all mid: side bands do nothing, the rest filter it.
+                if (! stereo)
                 {
-                    if (! b.target.active)
-                        continue;
-
-                    for (int s = 0; s < b.design.numSections; ++s)
-                    {
-                        const auto& c = b.design.sections[(size_t) s];
-                        auto& state = b.state[(size_t) ch][(size_t) s];
-
-                        for (int i = 0; i < n; ++i)
-                            buffer[(size_t) i] = state.process (c, buffer[(size_t) i]);
-                    }
+                    if (b.target.placement != Placement::side)
+                        b.run (0, left.data(), n);
+                    continue;
                 }
 
-                for (int i = 0; i < n; ++i)
-                    data[i] = (float) buffer[(size_t) i];
+                switch (b.target.placement)
+                {
+                    case Placement::stereo:
+                        b.run (0, left.data(), n);
+                        b.run (1, right.data(), n);
+                        break;
+
+                    case Placement::left:
+                        b.run (0, left.data(), n);
+                        break;
+
+                    case Placement::right:
+                        b.run (0, right.data(), n);
+                        break;
+
+                    case Placement::mid:
+                    case Placement::side:
+                    {
+                        // Encode to mid/side, filter one of them, decode back.
+                        std::array<double, subBlockSize> mid, side;
+                        for (int i = 0; i < n; ++i)
+                        {
+                            mid[(size_t) i] = 0.5 * (left[(size_t) i] + right[(size_t) i]);
+                            side[(size_t) i] = 0.5 * (left[(size_t) i] - right[(size_t) i]);
+                        }
+
+                        b.run (0, b.target.placement == Placement::mid ? mid.data() : side.data(), n);
+
+                        for (int i = 0; i < n; ++i)
+                        {
+                            left[(size_t) i] = mid[(size_t) i] + side[(size_t) i];
+                            right[(size_t) i] = mid[(size_t) i] - side[(size_t) i];
+                        }
+                        break;
+                    }
+                }
+            }
+
+            for (int i = 0; i < n; ++i)
+            {
+                channels[0][start + i] = (float) left[(size_t) i];
+                if (stereo)
+                    channels[1][start + i] = (float) right[(size_t) i];
             }
         }
     }
@@ -112,6 +168,18 @@ private:
         {
             for (auto& ch : state)
                 ch.fill ({});
+        }
+
+        void run (int channel, double* buffer, int n) noexcept
+        {
+            for (int s = 0; s < design.numSections; ++s)
+            {
+                const auto& c = design.sections[(size_t) s];
+                auto& st = state[(size_t) channel][(size_t) s];
+
+                for (int i = 0; i < n; ++i)
+                    buffer[i] = st.process (c, buffer[i]);
+            }
         }
     };
 
@@ -174,4 +242,35 @@ private:
     double smoothing = 1.0;
     std::array<Band, numBands> bands {};
 };
+// Level change of the whole EQ, as the average of its curve in dB over
+// log-spaced points from 40 Hz to 16 kHz. Auto gain subtracts this so
+// boosting or cutting does not change the overall loudness much.
+template <size_t N>
+double averageGainDb (const std::array<BandTarget, N>& bands, double sampleRate) noexcept
+{
+    constexpr int numPoints = 32;
+    std::array<double, numPoints> sum {};
+
+    for (const auto& b : bands)
+    {
+        if (! b.active)
+            continue;
+
+        const auto design = designBand (b.params, sampleRate);
+        // A band on one channel or on mid or side moves the overall level about half as much.
+        const double weight = b.placement == Placement::stereo ? 1.0 : 0.5;
+
+        for (int i = 0; i < numPoints; ++i)
+        {
+            const double hz = 40.0 * std::pow (400.0, i / (numPoints - 1.0));
+            sum[(size_t) i] += weight * design.magnitudeDb (std::min (2.0 * pi * hz / sampleRate, 0.9999 * pi));
+        }
+    }
+
+    double total = 0.0;
+    for (double v : sum)
+        total += v;
+
+    return total / numPoints;
+}
 } // namespace cruz::dsp

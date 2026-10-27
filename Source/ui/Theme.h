@@ -14,6 +14,7 @@ inline const juce::Colour text { 0xffe6e8eb };
 inline const juce::Colour dimText { 0xff7d8590 };
 inline const juce::Colour accent { 0xff4fc3a1 };
 inline const juce::Colour curve { 0xfff2f4f7 };
+inline const juce::Colour curveAlt { 0xfff0b44c };
 inline const juce::Colour analyzerPost { 0xff3d8db5 };
 inline const juce::Colour analyzerPre { 0xff4c5563 };
 

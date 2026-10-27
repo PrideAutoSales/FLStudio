@@ -15,11 +15,30 @@ appear under the **Artifacts** section of each run on the **Actions** tab.
 ## Roadmap
 
 1. **Project setup** (done): plugin skeleton, automatic Mac build, install guide.
-2. **First playable EQ**: zero-latency bands with the main filter shapes, draggable band
-   nodes, and a live spectrum analyzer.
+2. **First playable EQ** (this version): 24 zero-latency bands with bell, shelf, tilt,
+   cut (6 to 96 dB/oct), notch and band pass shapes, draggable band dots, and a live
+   pre/post spectrum analyzer.
 3. **Feature parity**: linear and natural phase modes, dynamic EQ, spectral dynamics,
    mid/side and left/right processing, EQ match, auto gain, and the remaining shapes and slopes.
 4. **Polish and benchmark**: CPU, latency and sound compared side by side in real sessions.
+
+## Using the EQ
+
+- **Add a band:** double-click anywhere on the display.
+- **Move a band:** drag its dot. Left and right is frequency. Up and down is gain, or Q
+  for cuts, notches and band passes. Hold Shift for fine moves.
+- **Change Q:** scroll over a dot, or use the Q knob.
+- **Bypass a band:** Option-click its dot, or tick Bypass.
+- **Remove a band:** double-click its dot, or click Remove.
+- **More options:** right-click a dot to change its shape or slope.
+
+## How the filters work
+
+The zero-latency mode uses "matched" filters: each band's response is computed so it
+follows the ideal analog curve all the way up to the top of the spectrum, instead of
+bunching up near 20 kHz like many digital EQs. The engine runs in double precision with
+smoothed parameter changes. `Tests/DspTests.cpp` checks every shape against its analog
+curve, checks stability across the full parameter range, and measures CPU use.
 
 ## Building it yourself (optional)
 

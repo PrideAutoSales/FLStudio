@@ -17,7 +17,10 @@ You only need to do this once per new build. No coding tools are needed.
    bash ~/Downloads/CruzVerb-mac/install.sh
    ```
 
-3. When it says **Cruz Verb is installed**, you can close Terminal.
+3. Terminal asks for your **Mac login password**, because the plugin goes into
+   `/Library/Audio/Plug-Ins`, the folder FL Studio scans. Type it and press Return.
+   Nothing appears while you type, which is normal.
+4. When it says **Done**, you can close Terminal.
 
 ## 3. Load it in FL Studio
 
@@ -26,6 +29,9 @@ You only need to do this once per new build. No coding tools are needed.
 
 The usual way to use a reverb is on a send: route a few tracks to an empty mixer
 track, put Cruz Verb on it and turn **Mix** to 100 %. Directly on a track, keep Mix low.
+
+If Cruz Verb does not show up, check that FL Studio's plugin search paths include
+`/Library/Audio/Plug-Ins/VST3`, then scan again.
 
 ## Updating to a newer build
 

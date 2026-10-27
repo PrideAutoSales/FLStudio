@@ -1,5 +1,6 @@
 #pragma once
 
+#include "EditorRedrawGuard.h"
 #include "PluginProcessor.h"
 #include "ReverbDisplay.h"
 #include "Theme.h"
@@ -12,6 +13,10 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    // Draw on the main thread instead of in the background. Some hosts (FL
+    // Studio on macOS) otherwise show an empty window on the first open.
+    bool wantsLayerBackedView() const override { return false; }
 
 private:
     struct Knob
@@ -36,6 +41,8 @@ private:
     juce::ComboBox presetBox;
 
     std::array<Knob, 10> knobs;
+
+    cruz::EditorRedrawGuard redrawGuard { *this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CruzVerbAudioProcessorEditor)
 };

@@ -4,7 +4,7 @@ juce_add_plugin(CruzVerb
     PLUGIN_MANUFACTURER_CODE Cruz
     PLUGIN_CODE Crrv
     PRODUCT_NAME "Cruz Verb"
-    VERSION 0.1.0
+    VERSION 0.1.1
     FORMATS VST3 AU
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE

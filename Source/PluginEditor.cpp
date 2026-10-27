@@ -74,8 +74,8 @@ CruzEQAudioProcessorEditor::CruzEQAudioProcessorEditor (CruzEQAudioProcessor& p)
     gainScaleSlider.setDoubleClickReturnValue (true, 100.0);
 
     setResizable (true, true);
-    setResizeLimits (760, 460, 2400, 1400);
-    setSize (980, 600);
+    setResizeLimits (960, 500, 2400, 1400);
+    setSize (1120, 640);
     startTimerHz (10);
 }
 

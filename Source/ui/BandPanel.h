@@ -5,7 +5,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 // Controls for the selected band: shape, slope, stereo placement, frequency,
-// gain, Q, bypass.
+// gain, Q, bypass, and the dynamic EQ settings.
 class BandPanel final : public juce::Component,
                         private juce::Timer
 {
@@ -16,6 +16,7 @@ public:
     std::function<void()> onRemove;
 
     void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
     void resized() override;
 
 private:
@@ -32,14 +33,17 @@ private:
 
     juce::Label title, hint;
     juce::ComboBox shapeBox, slopeBox, placeBox;
-    juce::Slider freqSlider, gainSlider, qSlider;
-    juce::Label shapeLabel, slopeLabel, placeLabel, freqLabel, gainLabel, qLabel;
-    juce::ToggleButton bypassButton { "Bypass" };
+    juce::Slider freqSlider, gainSlider, qSlider, rangeSlider, thresholdSlider, attackSlider, releaseSlider;
+    juce::Label shapeLabel, slopeLabel, placeLabel, freqLabel, gainLabel, qLabel, rangeLabel, thresholdLabel, attackLabel, releaseLabel;
+    juce::ToggleButton bypassButton { "Bypass" }, dynamicButton { "Dynamic" };
     juce::TextButton removeButton { "Remove" };
 
     std::unique_ptr<ComboBoxAttachment> shapeAttachment, slopeAttachment, placeAttachment;
-    std::unique_ptr<SliderAttachment> freqAttachment, gainAttachment, qAttachment;
-    std::unique_ptr<ButtonAttachment> bypassAttachment;
+    std::unique_ptr<SliderAttachment> freqAttachment, gainAttachment, qAttachment, rangeAttachment, thresholdAttachment, attackAttachment, releaseAttachment;
+    std::unique_ptr<ButtonAttachment> bypassAttachment, dynamicAttachment;
+
+    std::vector<std::pair<juce::Label*, juce::Slider*>> knobs();
+    juce::Rectangle<int> dynamicArea;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BandPanel)
 };

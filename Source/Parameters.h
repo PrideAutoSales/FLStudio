@@ -20,7 +20,12 @@ enum class BandField
     q,
     shape,
     slope,
-    place
+    place,
+    dynamic,
+    range,
+    threshold,
+    attack,
+    release
 };
 
 juce::String bandId (int band, BandField field);
@@ -42,6 +47,11 @@ struct BandRefs
     std::atomic<float>* shape = nullptr;
     std::atomic<float>* slope = nullptr;
     std::atomic<float>* place = nullptr;
+    std::atomic<float>* dynamic = nullptr;
+    std::atomic<float>* range = nullptr;
+    std::atomic<float>* threshold = nullptr;
+    std::atomic<float>* attack = nullptr;
+    std::atomic<float>* release = nullptr;
 
     static BandRefs fromState (juce::AudioProcessorValueTreeState& state, int band);
 
@@ -49,5 +59,6 @@ struct BandRefs
     bool isActive() const noexcept { return isUsed() && bypass->load() < 0.5f; }
     cruz::dsp::BandParams read() const noexcept;
     cruz::dsp::Placement placement() const noexcept;
+    cruz::dsp::DynamicParams dynamics() const noexcept;
 };
 } // namespace Params

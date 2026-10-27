@@ -99,7 +99,6 @@ private:
     int currentProgram = 0;
 
     double sampleRate = 44100.0;
-    int numActiveChannels = 2;
 
     patina::NoiseModule noise;
     patina::WobbleModule wobble;

@@ -59,9 +59,12 @@ namespace
                 .withStringFromValueFunction ([] (float v, int) { return juce::String (juce::roundToInt (v)); }));
     }
 
-    std::unique_ptr<juce::AudioParameterBool> toggle (const char* id, const char* name, bool def)
+    // An Off/On choice rather than AudioParameterBool: a bool keeps whatever raw value the host
+    // sends (e.g. 0.54), so restoring a saved state could leave it reading as half on.
+    std::unique_ptr<juce::AudioParameterChoice> toggle (const char* id, const char* name, bool def)
     {
-        return std::make_unique<juce::AudioParameterBool> (juce::ParameterID { id, 1 }, name, def);
+        return std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { id, 1 }, name,
+                                                             juce::StringArray { "Off", "On" }, def ? 1 : 0);
     }
 
     std::unique_ptr<juce::AudioParameterFloat> decibels (const char* id, const char* name)

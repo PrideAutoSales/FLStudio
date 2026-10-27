@@ -260,6 +260,123 @@ void testAutoGain()
     check (boost > 0.5 && std::abs (boost + cutAmount) < 1.0e-6, label);
 }
 
+// Runs a sine through one dynamic band and returns the output level change in dB
+// over the last tenth of a second, plus the band's own reading of its gain move.
+struct DynamicResult
+{
+    double measuredDb, reportedDb;
+};
+
+DynamicResult runDynamic (Shape shape, double bandHz, double staticGainDb, const DynamicParams& d, double sineHz, double sineDb,
+                          double seconds = 1.0, double silenceAfter = 0.0)
+{
+    EqEngine eq;
+    eq.prepare (48000.0);
+    BandTarget t { true, { shape, bandHz, staticGainDb, 1.0, 12 }, Placement::stereo, d };
+    eq.setBand (0, t);
+
+    const int n = (int) (seconds * 48000.0), tail = (int) (silenceAfter * 48000.0);
+    const double amp = std::pow (10.0, sineDb / 20.0);
+    std::vector<float> l ((size_t) (n + tail), 0.0f), r;
+
+    for (int i = 0; i < n; ++i)
+        l[(size_t) i] = (float) (amp * std::sin (2.0 * pi * sineHz * i / 48000.0));
+
+    r = l;
+    std::vector<float> dry = l;
+    float* channels[] { l.data(), r.data() };
+    eq.process (channels, 2, (int) l.size());
+
+    double in = 0.0, out = 0.0;
+    for (int i = n - 4800; i < n; ++i)
+    {
+        in += (double) dry[(size_t) i] * dry[(size_t) i];
+        out += (double) l[(size_t) i] * l[(size_t) i];
+    }
+
+    return { 10.0 * std::log10 (out / in), eq.currentDynamicGainDb (0) };
+}
+
+void testDynamics()
+{
+    char label[200];
+    DynamicParams d;
+    d.enabled = true;
+    d.rangeDb = -6.0;
+    d.thresholdDb = -30.0;
+    d.attackMs = 5.0;
+    d.releaseMs = 50.0;
+
+    auto r = runDynamic (Shape::bell, 1000.0, 0.0, d, 1000.0, -10.0);
+    std::snprintf (label, sizeof (label), "a loud tone at the band cuts by the full range (-6 dB range: %+.2f dB measured, %+.2f dB reported)", r.measuredDb, r.reportedDb);
+    check (std::abs (r.measuredDb + 6.0) < 0.3 && std::abs (r.reportedDb + 6.0) < 0.01, label);
+
+    r = runDynamic (Shape::bell, 1000.0, 0.0, d, 1000.0, -27.0);
+    std::snprintf (label, sizeof (label), "a tone 3 dB over the threshold cuts by about 3 dB (%+.2f dB measured, %+.2f dB reported)", r.measuredDb, r.reportedDb);
+    check (std::abs (r.measuredDb + 3.0) < 0.4, label);
+
+    r = runDynamic (Shape::bell, 1000.0, 0.0, d, 1000.0, -50.0);
+    std::snprintf (label, sizeof (label), "a quiet tone below the threshold is left alone (%+.3f dB)", r.measuredDb);
+    check (std::abs (r.measuredDb) < 0.05, label);
+
+    r = runDynamic (Shape::bell, 4000.0, 0.0, { true, -6.0, -30.0, 5.0, 50.0 }, 100.0, -10.0);
+    std::snprintf (label, sizeof (label), "a bell at 4 kHz ignores a loud 100 Hz tone (%+.3f dB gain move)", r.reportedDb);
+    check (std::abs (r.reportedDb) < 0.1, label);
+
+    r = runDynamic (Shape::bell, 1000.0, 3.0, d, 1000.0, -10.0);
+    std::snprintf (label, sizeof (label), "a +3 dB bell with -6 dB range ends at -3 dB when loud (%+.2f dB)", r.measuredDb);
+    check (std::abs (r.measuredDb + 3.0) < 0.3, label);
+
+    d.rangeDb = 6.0;
+    r = runDynamic (Shape::bell, 1000.0, 0.0, d, 1000.0, -10.0);
+    std::snprintf (label, sizeof (label), "a positive range boosts when loud (%+.2f dB)", r.measuredDb);
+    check (std::abs (r.measuredDb - 6.0) < 0.3, label);
+
+    d.rangeDb = -6.0;
+    r = runDynamic (Shape::lowShelf, 200.0, 0.0, d, 60.0, -10.0);
+    std::snprintf (label, sizeof (label), "a dynamic low shelf reacts to loud lows (%+.2f dB)", r.measuredDb);
+    check (std::abs (r.measuredDb + 6.0) < 0.3, label);
+
+    r = runDynamic (Shape::bell, 1000.0, 0.0, d, 1000.0, -10.0, 1.0, 0.5);
+    std::snprintf (label, sizeof (label), "the gain comes back after the sound stops (%+.3f dB after 10 releases)", r.reportedDb);
+    check (std::abs (r.reportedDb) < 0.01, label);
+
+    // Fast attack and release on noise, every shape, must stay stable.
+    EqEngine eq;
+    eq.prepare (44100.0);
+    for (int b = 0; b < EqEngine::numBands; ++b)
+        eq.setBand (b, { true, { (Shape) (b % numShapes), 40.0 * std::pow (1.3, b), 6.0, 2.0, 24 }, (Placement) (b % numPlacements),
+                         { true, b % 2 ? 12.0 : -12.0, -40.0, 1.0, 10.0 } });
+
+    std::mt19937 rng (5);
+    std::uniform_real_distribution<float> noise (-1.0f, 1.0f);
+    std::vector<float> l (441), r2 (441);
+    float* channels[] { l.data(), r2.data() };
+    bool finite = true;
+    double worst = 0.0;
+
+    for (int block = 0; block < 2000; ++block)
+    {
+        const float level = (block / 50) % 2 ? 0.8f : 0.001f;
+        for (size_t i = 0; i < l.size(); ++i)
+        {
+            l[i] = level * noise (rng);
+            r2[i] = level * noise (rng);
+        }
+
+        eq.process (channels, 2, (int) l.size());
+
+        for (float x : l)
+        {
+            finite &= std::isfinite (x);
+            worst = std::max (worst, (double) std::abs (x));
+        }
+    }
+
+    std::printf ("      loudest sample with 24 fast dynamic bands on bursts of noise: %.2f\n", worst);
+    check (finite && worst < 100.0, "24 fast dynamic bands on bursts of noise stay stable");
+}
+
 void testUnityAtZeroGain()
 {
     double worst = 0.0;
@@ -353,16 +470,18 @@ void benchmark()
     const double fs = 48000.0;
     const int seconds = 10, blockSize = 256;
 
-    for (int scenario = 0; scenario < 2; ++scenario)
+    for (int scenario = 0; scenario < 3; ++scenario)
     {
         EqEngine eq;
         eq.prepare (fs);
 
         for (int b = 0; b < EqEngine::numBands; ++b)
         {
-            const BandParams p = scenario == 0 ? BandParams { Shape::bell, 30.0 * std::pow (1.3, b), 6.0, 1.0, 12 }
+            const BandParams p = scenario != 1 ? BandParams { Shape::bell, 30.0 * std::pow (1.3, b), 6.0, 1.0, 12 }
                                                : BandParams { b % 2 ? Shape::highCut : Shape::lowCut, 30.0 * std::pow (1.3, b), 0.0, 0.7071, 96 };
-            eq.setBand (b, { true, p });
+            BandTarget t { true, p };
+            t.dynamics = { scenario == 2, -12.0, -40.0, 5.0, 100.0 };
+            eq.setBand (b, t);
         }
 
         std::vector<float> left ((size_t) blockSize), right ((size_t) blockSize);
@@ -384,7 +503,7 @@ void benchmark()
         }
 
         std::printf ("BENCH  %s: %.2f%% of one CPU core (stereo, 48 kHz)\n",
-                     scenario == 0 ? "24 bell bands" : "24 cut bands at 96 dB/oct (worst case)",
+                     scenario == 0 ? "24 bell bands" : scenario == 1 ? "24 cut bands at 96 dB/oct" : "24 dynamic bell bands",
                      100.0 * elapsed / seconds);
     }
 }
@@ -398,6 +517,7 @@ int main()
     testFlatTilt();
     testPlacement();
     testAutoGain();
+    testDynamics();
     testUnityAtZeroGain();
     testZeroLatencyAndMatch();
     testParameterSweepsStayBounded();

@@ -80,12 +80,19 @@ private:
     bool splitCurves = false;
     juce::String groupNames[2];
     std::array<std::vector<float>, Params::numBands> bandCurves;
+    // For the selected band when it is dynamic: its curve with no gain move
+    // and with the full range, drawn as a shaded area.
+    std::vector<float> staticCurve, rangeCurve;
 
     struct CachedBand
     {
         bool used = false, active = false;
         cruz::dsp::BandParams params; // as set on the band, before gain scale
         cruz::dsp::Placement placement = cruz::dsp::Placement::stereo;
+        cruz::dsp::DynamicParams dynamics;
+        float dynamicDb = 0.0f; // the gain move happening right now
+
+        bool isDynamic() const noexcept { return dynamics.enabled && cruz::dsp::shapeUsesDynamics (params.shape); }
     };
 
     std::array<CachedBand, Params::numBands> cache;

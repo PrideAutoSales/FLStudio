@@ -34,8 +34,9 @@ void CruzEQAudioProcessor::updateTargets() noexcept
     for (int b = 0; b < Params::numBands; ++b)
     {
         const auto& band = bands[(size_t) b];
-        cruz::dsp::BandTarget t { band.isActive(), band.read(), band.placement() };
+        cruz::dsp::BandTarget t { band.isActive(), band.read(), band.placement(), band.dynamics() };
         t.params.gainDb *= scale;
+        t.dynamics.rangeDb *= scale;
 
         auto& old = targets[(size_t) b];
         const bool changed = t.active != old.active || t.placement != old.placement
@@ -43,11 +44,11 @@ void CruzEQAudioProcessor::updateTargets() noexcept
                           || ! exactlyEqual (t.params.freqHz, old.params.freqHz) || ! exactlyEqual (t.params.gainDb, old.params.gainDb)
                           || ! exactlyEqual (t.params.q, old.params.q);
 
+        // Dynamics settings do not move the auto gain estimate.
         if (changed)
-        {
             autoGainDirty = true;
-            old = t;
-        }
+
+        old = t;
     }
 }
 
@@ -121,6 +122,9 @@ void CruzEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     }
 
     postEqFifo.push (buffer);
+
+    for (int b = 0; b < Params::numBands; ++b)
+        dynamicGainDb[(size_t) b] = (float) eq.currentDynamicGainDb (b);
 }
 
 juce::AudioProcessorEditor* CruzEQAudioProcessor::createEditor()

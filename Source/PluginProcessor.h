@@ -41,6 +41,8 @@ public:
     double getCurrentSampleRate() const noexcept { return currentSampleRate.load(); }
     // Gain auto gain is applying right now, in dB (0 when it is off).
     float getAutoGainDb() const noexcept { return autoGainDb.load(); }
+    // How far a dynamic band is moving its gain right now, in dB.
+    float getDynamicGainDb (int band) const noexcept { return dynamicGainDb[(size_t) band].load(); }
 
     AnalyzerFifo preEqFifo, postEqFifo;
 
@@ -55,6 +57,7 @@ private:
     int autoGainCountdown = 0;
     double autoGainEstimateDb = 0.0;
     std::atomic<float> autoGainDb { 0.0f };
+    std::array<std::atomic<float>, Params::numBands> dynamicGainDb {};
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> outputGain { 1.0f };
     cruz::dsp::EqEngine eq;
     std::atomic<double> currentSampleRate { 48000.0 };

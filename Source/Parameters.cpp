@@ -15,7 +15,7 @@ juce::NormalisableRange<float> logRange (float min, float max)
 
 juce::String bandId (int band, BandField field)
 {
-    static const char* names[] { "used", "bypass", "freq", "gain", "q", "shape", "slope", "place" };
+    static const char* names[] { "used", "bypass", "freq", "gain", "q", "shape", "slope", "place", "dyn", "range", "thresh", "attack", "release" };
     return "b" + juce::String (band + 1) + "_" + names[(int) field];
 }
 
@@ -69,6 +69,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     const auto freqText = [] (float v, int) { return formatFrequency (v); };
     const auto dbText = [] (float v, int) { return juce::String (v, 2) + " dB"; };
     const auto qText = [] (float v, int) { return juce::String (v, 3); };
+    const auto msText = [] (float v, int) { return juce::String (v, v < 10.0f ? 1 : 0) + " ms"; };
 
     for (int b = 0; b < numBands; ++b)
     {
@@ -95,6 +96,23 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         group->addChild (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { bandId (b, BandField::shape), 1 }, name + "Shape", shapeNames(), 0));
         group->addChild (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { bandId (b, BandField::slope), 1 }, name + "Slope", slopeNames(), 1));
         group->addChild (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { bandId (b, BandField::place), 1 }, name + "Placement", placementNames(), 0));
+        group->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { bandId (b, BandField::dynamic), 1 }, name + "Dynamic", false));
+        group->addChild (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { bandId (b, BandField::range), 1 }, name + "Dynamic Range",
+            juce::NormalisableRange<float> { (float) minDynamicRangeDb, (float) maxDynamicRangeDb, 0.01f }, -6.0f,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction (dbText)));
+        group->addChild (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { bandId (b, BandField::threshold), 1 }, name + "Threshold",
+            juce::NormalisableRange<float> { (float) minThresholdDb, (float) maxThresholdDb, 0.1f }, -24.0f,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction (dbText)));
+        group->addChild (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { bandId (b, BandField::attack), 1 }, name + "Attack",
+            logRange ((float) minAttackMs, (float) maxAttackMs), 10.0f,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction (msText)));
+        group->addChild (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { bandId (b, BandField::release), 1 }, name + "Release",
+            logRange ((float) minReleaseMs, (float) maxReleaseMs), 150.0f,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction (msText)));
 
         layout.add (std::move (group));
     }
@@ -113,6 +131,11 @@ BandRefs BandRefs::fromState (juce::AudioProcessorValueTreeState& state, int ban
     r.shape = state.getRawParameterValue (bandId (band, BandField::shape));
     r.slope = state.getRawParameterValue (bandId (band, BandField::slope));
     r.place = state.getRawParameterValue (bandId (band, BandField::place));
+    r.dynamic = state.getRawParameterValue (bandId (band, BandField::dynamic));
+    r.range = state.getRawParameterValue (bandId (band, BandField::range));
+    r.threshold = state.getRawParameterValue (bandId (band, BandField::threshold));
+    r.attack = state.getRawParameterValue (bandId (band, BandField::attack));
+    r.release = state.getRawParameterValue (bandId (band, BandField::release));
     return r;
 }
 
@@ -122,6 +145,11 @@ cruz::dsp::BandParams BandRefs::read() const noexcept
     const int shapeIndex = juce::jlimit (0, numShapes - 1, juce::roundToInt (shape->load()));
     const int slopeIndex = juce::jlimit (0, (int) slopesDbPerOct.size() - 1, juce::roundToInt (slope->load()));
     return { (Shape) shapeIndex, freq->load(), gain->load(), q->load(), slopesDbPerOct[(size_t) slopeIndex] };
+}
+
+cruz::dsp::DynamicParams BandRefs::dynamics() const noexcept
+{
+    return { dynamic->load() >= 0.5f, range->load(), threshold->load(), attack->load(), release->load() };
 }
 
 cruz::dsp::Placement BandRefs::placement() const noexcept

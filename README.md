@@ -19,9 +19,9 @@ appear under the **Artifacts** section of each run on the **Actions** tab.
    cut (6 to 96 dB/oct), notch and band pass shapes, draggable band dots, and a live
    pre/post spectrum analyzer.
 3. **Feature parity** (in progress):
-   - 3a (this version): per-band stereo placement (left, right, mid, side), slopes for
+   - 3a (done): per-band stereo placement (left, right, mid, side), slopes for
      shelves, notches and band passes, a flat tilt shape, auto gain and gain scale.
-   - 3b: dynamic EQ on every band.
+   - 3b (this version): dynamic EQ on every bell, shelf and tilt band.
    - 3c: linear phase and natural phase modes.
    - 3d: EQ match and spectral dynamics.
 4. **Polish and benchmark**: CPU, latency and sound compared side by side in real sessions.
@@ -44,6 +44,14 @@ appear under the **Artifacts** section of each run on the **Actions** tab.
   amount it applies is shown next to the switch.
 - **Gain Scale:** scales every band's gain at once (100% is as set, 0% is flat,
   200% doubles it).
+- **Dynamic EQ:** tick Dynamic on a bell, shelf or tilt band (or right-click its dot).
+  While the sound around the band's frequency is above **Threshold**, the band's gain
+  moves by up to **Range**: a negative range cuts when it gets loud (for harsh notes,
+  sibilance or boomy bass), a positive range boosts when it gets loud. **Attack** and
+  **Release** set how fast it reacts and recovers. The selected band shows the area it
+  can move through, a line from its dot to the end of the range, and a small dot where
+  its gain is right now. The band listens to the plugin's input, so the order of the
+  bands does not matter.
 
 ## How the filters work
 

@@ -6,12 +6,10 @@ on:
     paths:
       - "plugins/CruzPatina/**"
       - ".github/workflows/build-cruzpatina.yml"
-      - "CMakeLists.txt"
   pull_request:
     paths:
       - "plugins/CruzPatina/**"
       - ".github/workflows/build-cruzpatina.yml"
-      - "CMakeLists.txt"
   workflow_dispatch:
 
 permissions:

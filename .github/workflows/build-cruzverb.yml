@@ -71,7 +71,7 @@ jobs:
           name: ${{ env.ZIP_NAME }}
           path: dist/${{ env.ZIP_NAME }}.zip
 
-      - name: Add to "Latest build" release
+      - name: Add to "Latest builds" release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}

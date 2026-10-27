@@ -5,7 +5,7 @@ You only need to do this once per new build. No coding tools are needed.
 ## 1. Download the latest build
 
 1. Open the repo on GitHub and click **Releases** on the right side.
-2. Under **Latest build**, click **CruzVerb-mac.zip** to download it.
+2. Under **Latest builds**, click **CruzVerb-mac.zip** to download it.
 3. In Finder, open your **Downloads** folder and double-click **CruzVerb-mac.zip**. You will get a folder called **CruzVerb-mac**.
 
 ## 2. Install it

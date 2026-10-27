@@ -2,6 +2,7 @@
 // build the CruzEQTests target and run it, or use `ctest`.
 
 #include "dsp/EqEngine.h"
+#include "dsp/Convolver.h"
 
 #include <chrono>
 #include <cstdio>
@@ -377,6 +378,184 @@ void testDynamics()
     check (finite && worst < 100.0, "24 fast dynamic bands on bursts of noise stay stable");
 }
 
+// Frequency response of a kernel at angular frequency w, with its delay removed.
+std::complex<double> kernelResponse (const std::vector<float>& kernel, double w, int delay)
+{
+    std::complex<double> sum;
+    for (size_t n = 0; n < kernel.size(); ++n)
+        sum += (double) kernel[n] * std::polar (1.0, -w * ((double) n - delay));
+    return sum;
+}
+
+void testPhaseModes()
+{
+    const double fs = 48000.0;
+    char label[220];
+
+    std::array<BandTarget, 4> bands {};
+    bands[0] = { true, { Shape::bell, 1000.0, 9.0, 1.0, 12 } };
+    bands[1] = { true, { Shape::lowCut, 80.0, 0.0, defaultQ, 24 } };
+    bands[2] = { true, { Shape::highShelf, 8000.0, -4.0, defaultQ, 12 } };
+    bands[3] = { true, { Shape::bell, 150.0, -6.0, 3.0, 12 } };
+    const std::array<double, 4> noDynamics {};
+
+    const auto analog = [&] (double hz)
+    {
+        std::complex<double> h (1.0, 0.0);
+        for (const auto& b : bands)
+            h *= analogPrototype (b.params).responseAt (hz / b.params.freqHz);
+        return h;
+    };
+
+    KernelDesigner designer;
+    EqKernels k;
+
+    for (int res = 0; res < numLinearResolutions; ++res)
+    {
+        designer.design (bands, noDynamics, PhaseMode::linear, res, fs, k);
+
+        double worstDb = 0.0, worstAsymmetry = 0.0;
+        for (double hz = 40.0; hz < 20000.0; hz *= 1.05)
+        {
+            const double got = std::max (20.0 * std::log10 (std::abs (kernelResponse (k.leftToLeft, 2.0 * pi * hz / fs, k.latency))), -24.0);
+            const double want = std::max (20.0 * std::log10 (std::abs (analog (hz))), -24.0);
+            worstDb = std::max (worstDb, std::abs (got - want));
+        }
+
+        for (int n = 1; n < k.length / 2; ++n)
+            worstAsymmetry = std::max (worstAsymmetry, (double) std::abs (k.leftToLeft[(size_t) (k.latency + n)] - k.leftToLeft[(size_t) (k.latency - n)]));
+
+        std::snprintf (label, sizeof (label), "linear phase, resolution %d (%d taps, %.1f ms latency): within %.2f dB of the analog curve from 40 Hz (worst %.3f dB), symmetric",
+                       res, k.length, 1000.0 * k.latency / fs, res == 0 ? 0.5 : 0.25, worstDb);
+        check (worstDb < (res == 0 ? 0.5 : 0.25) && worstAsymmetry < 1.0e-6 && k.latency == k.length / 2, label);
+    }
+
+    designer.design (bands, noDynamics, PhaseMode::natural, 0, fs, k);
+    double worstDb = 0.0, worstDeg = 0.0;
+    for (double hz = 40.0; hz < 0.4 * fs; hz *= 1.05)
+    {
+        const auto got = kernelResponse (k.leftToLeft, 2.0 * pi * hz / fs, k.latency);
+        const auto want = analog (hz);
+        worstDb = std::max (worstDb, std::abs (20.0 * std::log10 (std::abs (got) / std::abs (want))));
+        worstDeg = std::max (worstDeg, std::abs (std::arg (got / want)) * 180.0 / pi);
+    }
+
+    std::snprintf (label, sizeof (label), "natural phase (%.1f ms latency): analog magnitude and phase up to %.0f Hz (worst %.3f dB, %.2f degrees)",
+                   1000.0 * k.latency / fs, 0.4 * fs, worstDb, worstDeg);
+    check (worstDb < 0.2 && worstDeg < 2.0, label);
+
+    // A narrow bass bell needs the longer kernels.
+    std::array<BandTarget, 1> narrow {};
+    narrow[0] = { true, { Shape::bell, 40.0, 12.0, 6.0, 12 } };
+    const std::array<double, 1> none {};
+    designer.design (narrow, none, PhaseMode::linear, 4, fs, k);
+    const double peak = 20.0 * std::log10 (std::abs (kernelResponse (k.leftToLeft, 2.0 * pi * 40.0 / fs, k.latency)));
+    std::snprintf (label, sizeof (label), "maximum resolution keeps a narrow +12 dB bell at 40 Hz (%+.2f dB at its centre)", peak);
+    check (std::abs (peak - 12.0) < 0.3, label);
+
+    // A mid band acts on both channels for a centred sound and not for an
+    // out-of-phase one: left-to-left is (mid + side) / 2, left-to-right is (mid - side) / 2.
+    std::array<BandTarget, 1> mid {};
+    mid[0] = { true, { Shape::bell, 1000.0, 12.0, 1.0, 12 }, Placement::mid };
+    designer.design (mid, none, PhaseMode::linear, 2, fs, k);
+    const double w = 2.0 * pi * 1000.0 / fs, g = std::pow (10.0, 12.0 / 20.0);
+    const double ll = std::abs (kernelResponse (k.leftToLeft, w, k.latency)), lr = std::abs (kernelResponse (k.leftToRight, w, k.latency));
+    std::snprintf (label, sizeof (label), "mid bands in linear phase use the stereo matrix (left to left %.3f, left to right %.3f)", ll, lr);
+    check (k.hasCrossTerms && std::abs (ll - 0.5 * (g + 1.0)) < 0.01 && std::abs (lr - 0.5 * (g - 1.0)) < 0.01, label);
+
+    // A dynamic band's gain move is part of the kernel.
+    std::array<BandTarget, 1> dyn {};
+    dyn[0] = { true, { Shape::bell, 1000.0, 0.0, 1.0, 12 }, Placement::stereo, { true, -6.0, -30.0, 10.0, 100.0 } };
+    const std::array<double, 1> moved { -4.0 };
+    designer.design (dyn, moved, PhaseMode::linear, 2, fs, k);
+    const double atCentre = 20.0 * std::log10 (std::abs (kernelResponse (k.mono, w, k.latency)));
+    std::snprintf (label, sizeof (label), "linear phase kernels follow a dynamic band's gain move (%+.2f dB for a -4 dB move)", atCentre);
+    check (std::abs (atCentre + 4.0) < 0.05, label);
+}
+
+void testConvolver()
+{
+    // Two different stereo kernel sets with cross terms, from real EQ settings.
+    std::array<BandTarget, 2> a {}, b {};
+    a[0] = { true, { Shape::bell, 700.0, 8.0, 2.0, 12 }, Placement::mid };
+    a[1] = { true, { Shape::highShelf, 5000.0, -6.0, defaultQ, 12 }, Placement::left };
+    b[0] = { true, { Shape::bell, 300.0, -9.0, 1.0, 12 }, Placement::side };
+    b[1] = { true, { Shape::lowCut, 60.0, 0.0, defaultQ, 24 } };
+    const std::array<double, 2> none {};
+
+    KernelDesigner designer;
+    EqKernels ka, kb;
+    designer.design (a, none, PhaseMode::linear, 0, 48000.0, ka);
+    designer.design (b, none, PhaseMode::linear, 0, 48000.0, kb);
+
+    KernelSpectra sa, sb;
+    Convolver::makeSpectra (ka, false, sa);
+    Convolver::makeSpectra (kb, false, sb);
+
+    const int n = 48000;
+    std::mt19937 rng (11);
+    std::uniform_real_distribution<float> noise (-0.5f, 0.5f);
+    std::vector<float> inL ((size_t) n), inR ((size_t) n);
+    for (int i = 0; i < n; ++i)
+    {
+        inL[(size_t) i] = noise (rng);
+        inR[(size_t) i] = noise (rng);
+    }
+
+    // Reference: direct convolution with the 2x2 kernel matrix, delayed by one block.
+    const auto direct = [&] (const EqKernels& k, int i, bool left)
+    {
+        double sum = 0.0;
+        for (int t = 0; t < k.length; ++t)
+        {
+            const int j = i - Convolver::blockSize - t;
+            if (j < 0)
+                break;
+            sum += left ? k.leftToLeft[(size_t) t] * inL[(size_t) j] + k.rightToLeft[(size_t) t] * inR[(size_t) j]
+                        : k.rightToRight[(size_t) t] * inR[(size_t) j] + k.leftToRight[(size_t) t] * inL[(size_t) j];
+        }
+        return sum;
+    };
+
+    Convolver conv;
+    conv.prepare (Convolver::partitionsFor (ka.length), 4096);
+    conv.setKernels (&sa);
+
+    std::vector<float> l = inL, r = inR;
+    float* channels[] { l.data(), r.data() };
+    const int swapAt = 24000;
+
+    // Odd block sizes on purpose; switch to the second kernels halfway.
+    for (int start = 0; start < n;)
+    {
+        const int len = std::min (97 + (start % 300), n - start);
+        if (start <= swapAt && swapAt < start + len)
+            conv.setKernels (&sb);
+        float* block[] { l.data() + start, r.data() + start };
+        conv.process (block, 2, len);
+        start += len;
+    }
+
+    double worstBefore = 0.0, worstAfter = 0.0, worstJump = 0.0;
+    for (int i = 4000; i < swapAt; i += 7)
+        worstBefore = std::max ({ worstBefore, std::abs (l[(size_t) i] - direct (ka, i, true)), std::abs (r[(size_t) i] - direct (ka, i, false)) });
+    for (int i = swapAt + 4096 + 2 * Convolver::blockSize + ka.length; i < n; i += 7)
+        worstAfter = std::max ({ worstAfter, std::abs (l[(size_t) i] - direct (kb, i, true)), std::abs (r[(size_t) i] - direct (kb, i, false)) });
+
+    // During the crossfade the output stays between the two settings' outputs.
+    for (int i = swapAt; i < swapAt + 4096 + 2 * Convolver::blockSize; i += 3)
+    {
+        const double lo = std::min (direct (ka, i, true), direct (kb, i, true)), hi = std::max (direct (ka, i, true), direct (kb, i, true));
+        worstJump = std::max ({ worstJump, lo - l[(size_t) i], l[(size_t) i] - hi });
+    }
+
+    char label[200];
+    std::snprintf (label, sizeof (label), "the convolver matches direct convolution before and after a kernel swap (errors %.1e, %.1e)", worstBefore, worstAfter);
+    check (worstBefore < 1.0e-4 && worstAfter < 1.0e-4, label);
+    std::snprintf (label, sizeof (label), "a kernel swap crossfades without a dip or jump (worst step outside the two outputs %.1e)", worstJump);
+    check (worstJump < 1.0e-4, label);
+}
+
 void testUnityAtZeroGain()
 {
     double worst = 0.0;
@@ -518,6 +697,8 @@ int main()
     testPlacement();
     testAutoGain();
     testDynamics();
+    testPhaseModes();
+    testConvolver();
     testUnityAtZeroGain();
     testZeroLatencyAndMatch();
     testParameterSweepsStayBounded();

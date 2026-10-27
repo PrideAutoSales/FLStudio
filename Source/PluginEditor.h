@@ -33,6 +33,10 @@ private:
     juce::ToggleButton autoGainButton { "Auto gain" };
     juce::AudioProcessorValueTreeState::ButtonAttachment autoGainAttachment;
 
+    juce::ComboBox phaseModeBox, resolutionBox;
+    juce::Label latencyLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> phaseModeAttachment, resolutionAttachment;
+
     juce::Slider outputGainSlider, gainScaleSlider;
     juce::Label outputGainLabel, gainScaleLabel;
     juce::AudioProcessorValueTreeState::SliderAttachment outputGainAttachment, gainScaleAttachment;

@@ -55,6 +55,21 @@ CruzEQAudioProcessorEditor::CruzEQAudioProcessorEditor (CruzEQAudioProcessor& p)
     autoGainButton.setTooltip ("Keeps the overall level about the same while you boost or cut");
     addAndMakeVisible (autoGainButton);
 
+    phaseModeBox.addItemList (Params::phaseModeNames(), 1);
+    phaseModeBox.setTooltip ("Zero Latency: no delay. Natural Phase: analog-like sound with a few ms of delay. "
+                             "Linear Phase: no phase shift at all, with more delay at higher resolutions");
+    resolutionBox.addItemList (Params::resolutionNames(), 1);
+    resolutionBox.setTooltip ("Linear phase resolution: higher keeps narrow bass bands exact, but adds more delay and uses more CPU");
+    phaseModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (p.getState(), Params::phaseMode, phaseModeBox);
+    resolutionAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (p.getState(), Params::resolution, resolutionBox);
+    addAndMakeVisible (phaseModeBox);
+    addAndMakeVisible (resolutionBox);
+
+    latencyLabel.setColour (juce::Label::textColourId, Theme::dimText);
+    latencyLabel.setJustificationType (juce::Justification::centredLeft);
+    latencyLabel.setFont (juce::FontOptions (12.0f));
+    addAndMakeVisible (latencyLabel);
+
     for (auto [slider, label, text] : { std::tuple { &outputGainSlider, &outputGainLabel, "Output" },
                                         std::tuple { &gainScaleSlider, &gainScaleLabel, "Gain Scale" } })
     {
@@ -92,6 +107,13 @@ void CruzEQAudioProcessorEditor::timerCallback()
 
     if (autoGainButton.getButtonText() != text)
         autoGainButton.setButtonText (text);
+
+    resolutionBox.setEnabled (phaseModeBox.getSelectedItemIndex() == (int) cruz::dsp::PhaseMode::linear);
+
+    const double ms = 1000.0 * processor.getLatencySamples() / juce::jmax (1.0, processor.getCurrentSampleRate());
+    const auto latency = "Latency " + (ms < 10.0 ? juce::String (ms, 1) : juce::String (juce::roundToInt (ms))) + " ms";
+    if (latencyLabel.getText() != latency)
+        latencyLabel.setText (latency, juce::dontSendNotification);
 }
 
 CruzEQAudioProcessorEditor::~CruzEQAudioProcessorEditor()
@@ -122,7 +144,12 @@ void CruzEQAudioProcessorEditor::resized()
     rangeBox.setBounds (header.removeFromRight (120).withSizeKeepingCentre (120, 24));
     rangeLabel.setBounds (header.removeFromRight (60));
     header.removeFromRight (16);
-    autoGainButton.setBounds (header.removeFromRight (170).withSizeKeepingCentre (170, 24));
+    autoGainButton.setBounds (header.removeFromRight (160).withSizeKeepingCentre (160, 24));
+    header.removeFromRight (12);
+    latencyLabel.setBounds (header.removeFromRight (100));
+    resolutionBox.setBounds (header.removeFromRight (104).withSizeKeepingCentre (104, 24));
+    header.removeFromRight (6);
+    phaseModeBox.setBounds (header.removeFromRight (136).withSizeKeepingCentre (136, 24));
 
     area.removeFromBottom (12);
     auto bottom = area.removeFromBottom (140);

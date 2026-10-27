@@ -2,18 +2,20 @@
 
 #include "AnalyzerFifo.h"
 #include "Parameters.h"
+#include "PhaseModeRunner.h"
 #include "dsp/EqEngine.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
-class CruzEQAudioProcessor final : public juce::AudioProcessor
+class CruzEQAudioProcessor final : public juce::AudioProcessor,
+                                   private juce::AsyncUpdater
 {
 public:
     CruzEQAudioProcessor();
-    ~CruzEQAudioProcessor() override = default;
+    ~CruzEQAudioProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override {}
+    void releaseResources() override;
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     using AudioProcessor::processBlock;
@@ -52,6 +54,8 @@ private:
     std::atomic<float>* outputGainDb = nullptr;
     std::atomic<float>* autoGainOn = nullptr;
     std::atomic<float>* gainScale = nullptr;
+    std::atomic<float>* phaseModeParam = nullptr;
+    std::atomic<float>* resolutionParam = nullptr;
     std::array<cruz::dsp::BandTarget, Params::numBands> targets {};
     bool autoGainDirty = true;
     int autoGainCountdown = 0;
@@ -60,8 +64,14 @@ private:
     std::array<std::atomic<float>, Params::numBands> dynamicGainDb {};
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> outputGain { 1.0f };
     cruz::dsp::EqEngine eq;
+    PhaseModeRunner phaseModes;
+    PhaseModeRunner::DynamicGains currentDynamicDb {};
+    std::atomic<int> pendingLatency { 0 };
     std::atomic<double> currentSampleRate { 48000.0 };
 
+    void handleAsyncUpdate() override;
+    cruz::dsp::PhaseMode requestedPhaseMode() const noexcept;
+    int requestedResolution() const noexcept;
     void updateTargets() noexcept;
     float totalOutputGainDb (int numSamples) noexcept;
 

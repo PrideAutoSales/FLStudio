@@ -17,7 +17,8 @@ You only need to do this once per new build. No coding tools are needed.
    bash ~/Downloads/CruzEcho-mac/install.sh
    ```
 
-3. When it says **Cruz Echo is installed**, you can close Terminal.
+3. It asks for your **Mac login password**, because the plugins go in `/Library/Audio/Plug-Ins`, the folder FL Studio scans. Type it and press Return. Nothing appears while you type, which is normal.
+4. When it says **Done**, you can close Terminal.
 
 ## 3. Load it in FL Studio
 
@@ -26,7 +27,7 @@ You only need to do this once per new build. No coding tools are needed.
 3. Open the **Mixer**, click an empty effect slot on any track, and choose **Cruz Echo**.
 
 If Cruz Echo does not show up, check that the plugin manager's search paths include
-`~/Library/Audio/Plug-Ins/VST3`, then scan again.
+`/Library/Audio/Plug-Ins/VST3`, then scan again.
 
 ## Updating to a newer build
 

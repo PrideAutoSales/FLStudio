@@ -6,7 +6,7 @@ juce_add_plugin(CruzEcho
     PLUGIN_MANUFACTURER_CODE Cruz
     PLUGIN_CODE Crdy
     PRODUCT_NAME "Cruz Echo"
-    VERSION 0.1.0
+    VERSION 0.1.1
     FORMATS VST3 AU
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE

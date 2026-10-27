@@ -25,8 +25,8 @@ CruzSynthProcessor::CruzSynthProcessor()
         setLfoPoints (l, defaultLfoPoints());
 
     // Start on a plain saw, like most synths' init patch.
-    setParam (id::osc (0, "pos"), 2.0f / 3.0f);
-    setParam (id::osc (1, "pos"), 2.0f / 3.0f);
+    setParam (cs::id::osc (0, "pos"), 2.0f / 3.0f);
+    setParam (cs::id::osc (1, "pos"), 2.0f / 3.0f);
 }
 
 CruzSynthProcessor::~CruzSynthProcessor() = default;
@@ -190,12 +190,12 @@ int CruzSynthProcessor::addModulation (int source, int destination, float amount
     if (source <= 0 || destination <= 0)
         return -1;
 
-    auto idx = [&] (int s, const char* n) { return apvts.getParameter (id::slot (s, n)); };
+    auto idx = [&] (int s, const char* n) { return apvts.getParameter (cs::id::slot (s, n)); };
     int free = -1;
     for (int s = 0; s < kNumModSlots; ++s)
     {
-        const int src = juce::roundToInt (apvts.getRawParameterValue (id::slot (s, "src"))->load());
-        const int dst = juce::roundToInt (apvts.getRawParameterValue (id::slot (s, "dst"))->load());
+        const int src = juce::roundToInt (apvts.getRawParameterValue (cs::id::slot (s, "src"))->load());
+        const int dst = juce::roundToInt (apvts.getRawParameterValue (cs::id::slot (s, "dst"))->load());
         if (src == source && dst == destination)
             return s; // already routed
         if (free < 0 && (src == 0 || dst == 0))
@@ -220,7 +220,7 @@ void CruzSynthProcessor::clearModulationSlot (int slot)
 {
     for (auto* n : { "src", "dst", "amount", "bipolar" })
     {
-        auto* p = apvts.getParameter (id::slot (slot, n));
+        auto* p = apvts.getParameter (cs::id::slot (slot, n));
         p->setValueNotifyingHost (p->getDefaultValue());
     }
 }
@@ -230,8 +230,8 @@ juce::Array<int> CruzSynthProcessor::slotsForDestination (int destination) const
     juce::Array<int> r;
     for (int s = 0; s < kNumModSlots; ++s)
     {
-        const int src = juce::roundToInt (apvts.getRawParameterValue (id::slot (s, "src"))->load());
-        const int dst = juce::roundToInt (apvts.getRawParameterValue (id::slot (s, "dst"))->load());
+        const int src = juce::roundToInt (apvts.getRawParameterValue (cs::id::slot (s, "src"))->load());
+        const int dst = juce::roundToInt (apvts.getRawParameterValue (cs::id::slot (s, "dst"))->load());
         if (src > 0 && dst == destination)
             r.add (s);
     }
@@ -284,10 +284,10 @@ void CruzSynthProcessor::loadFactoryPreset (int index)
     auto table = [this] (int o, const char* name) { setTable (o, tables::makeFactory (factoryTableIndex (name))); };
     auto mod = [&] (ModSrc s, ModDst d, float amount, bool bipolar = false)
     {
-        set (id::slot (nextSlot, "src"), (float) s);
-        set (id::slot (nextSlot, "dst"), (float) d);
-        set (id::slot (nextSlot, "amount"), amount);
-        set (id::slot (nextSlot, "bipolar"), bipolar ? 1.0f : 0.0f);
+        set (cs::id::slot (nextSlot, "src"), (float) s);
+        set (cs::id::slot (nextSlot, "dst"), (float) d);
+        set (cs::id::slot (nextSlot, "amount"), amount);
+        set (cs::id::slot (nextSlot, "bipolar"), bipolar ? 1.0f : 0.0f);
         ++nextSlot;
     };
     const float saw = 2.0f / 3.0f;

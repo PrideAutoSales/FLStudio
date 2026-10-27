@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "EditorRedrawGuard.h"
 
 namespace patina::ui
 {
@@ -83,6 +84,10 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    // Draw on the main thread instead of in the background. Some hosts (FL
+    // Studio on macOS) otherwise show an empty window on the first open.
+    bool wantsLayerBackedView() const override { return false; }
+
     static constexpr int baseWidth = 940;
     static constexpr int baseHeight = 560;
 
@@ -108,6 +113,7 @@ private:
 
     patina::ui::PatinaLookAndFeel lookAndFeel;
     Content content;
+    cruz::EditorRedrawGuard redrawGuard { *this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CruzPatinaAudioProcessorEditor)
 };

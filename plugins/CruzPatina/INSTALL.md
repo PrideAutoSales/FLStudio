@@ -14,8 +14,11 @@ crushing, a small reverb and worn-tape effects, all scaled by one **Magnitude** 
    bash ~/Downloads/CruzPatina-mac/install.sh
    ```
 
-4. When it says **Cruz Patina is installed**, open FL Studio, go to **Options > Manage plugins**,
+4. It asks for your **Mac login password**, because it puts the plugin in `/Library/Audio/Plug-Ins`,
+   the folder FL Studio scans. Nothing appears while you type, which is normal. Press Return.
+5. When it says **Done**, open FL Studio, go to **Options > Manage plugins**,
    click **Find installed plugins**, then load **Cruz Patina** on a mixer track.
+   If it doesn't show up, check that the plugin search paths include `/Library/Audio/Plug-Ins/VST3`.
 
 To update later, delete the old **CruzPatina-mac** folder from Downloads, repeat the steps,
 and restart FL Studio.

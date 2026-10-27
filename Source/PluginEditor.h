@@ -2,6 +2,7 @@
 
 #include "PluginProcessor.h"
 #include "ui/BandPanel.h"
+#include "ui/EditorRedrawGuard.h"
 #include "ui/EqDisplay.h"
 
 class CruzEQAudioProcessorEditor final : public juce::AudioProcessorEditor,
@@ -13,6 +14,10 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    // Draw on the main thread instead of in the background. Some hosts (FL
+    // Studio on macOS) otherwise show an empty window on the first open.
+    bool wantsLayerBackedView() const override { return false; }
 
 private:
     void timerCallback() override;
@@ -35,6 +40,8 @@ private:
     juce::Slider outputGainSlider, gainScaleSlider;
     juce::Label outputGainLabel, gainScaleLabel;
     juce::AudioProcessorValueTreeState::SliderAttachment outputGainAttachment, gainScaleAttachment;
+
+    cruz::EditorRedrawGuard redrawGuard { *this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CruzEQAudioProcessorEditor)
 };

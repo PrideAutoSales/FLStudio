@@ -4,6 +4,7 @@ juce_add_plugin(CruzLimiter
     PLUGIN_MANUFACTURER_CODE Cruz
     PLUGIN_CODE Crlm
     PRODUCT_NAME "Cruz Limiter"
+    VERSION 1.0.1
     FORMATS VST3 AU
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE

@@ -1,6 +1,6 @@
 # Cruz Patina: vintage and lo-fi colour (noise, wobble, distortion, digital, space, magnetic).
 juce_add_plugin(CruzPatina
-    VERSION 0.1.0
+    VERSION 0.1.1
     COMPANY_NAME "Cruz Audio"
     BUNDLE_ID com.cruzaudio.cruzpatina
     PLUGIN_MANUFACTURER_CODE Cruz

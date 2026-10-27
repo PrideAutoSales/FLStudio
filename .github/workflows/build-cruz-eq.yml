@@ -1,9 +1,11 @@
-name: Build Mac plugin
+name: Build Cruz EQ (Mac)
 
 on:
   push:
     branches: [main]
+    paths: ["Source/**", "Tests/**", "packaging/**", "docs/INSTALL.md", "CMakeLists.txt", ".github/workflows/build-cruz-eq.yml"]
   pull_request:
+    paths: ["Source/**", "Tests/**", "packaging/**", "docs/INSTALL.md", "CMakeLists.txt", ".github/workflows/build-cruz-eq.yml"]
   workflow_dispatch:
 
 permissions:
@@ -30,7 +32,10 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
       - name: Build
-        run: cmake --build build --config Release --parallel 4
+        run: cmake --build build --config Release --parallel 4 --target CruzEQ_All CruzEQTests
+
+      - name: Test the EQ engine
+        run: ctest --test-dir build --output-on-failure -R dsp
 
       - name: Sign (ad hoc)
         run: |
@@ -67,8 +72,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest dist/CruzEQ-mac.zip \
+          # Other plugins share this release, so only replace our own zip.
+          gh release view latest > /dev/null 2>&1 || gh release create latest \
             --target "$GITHUB_SHA" \
-            --title "Latest build" \
-            --notes "Built automatically from commit $GITHUB_SHA. Install steps are in INSTALL.md inside the zip."
+            --title "Latest builds" \
+            --notes "Each plugin's newest Mac build. Install steps are in INSTALL.md inside each zip." || true
+          gh release upload latest dist/CruzEQ-mac.zip --clobber

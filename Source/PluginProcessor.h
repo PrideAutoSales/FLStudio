@@ -1,11 +1,10 @@
 #pragma once
 
-#include <juce_audio_processors/juce_audio_processors.h>
+#include "AnalyzerFifo.h"
+#include "Parameters.h"
+#include "dsp/EqEngine.h"
 
-namespace ParamIDs
-{
-    inline constexpr auto outputGain = "outputGain";
-}
+#include <juce_audio_processors/juce_audio_processors.h>
 
 class CruzEQAudioProcessor final : public juce::AudioProcessor
 {
@@ -38,13 +37,18 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& getState() noexcept { return state; }
+    const Params::BandRefs& getBand (int index) const noexcept { return bands[(size_t) index]; }
+    double getCurrentSampleRate() const noexcept { return currentSampleRate.load(); }
 
-    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    AnalyzerFifo preEqFifo, postEqFifo;
 
 private:
     juce::AudioProcessorValueTreeState state;
+    std::array<Params::BandRefs, Params::numBands> bands;
     std::atomic<float>* outputGainDb = nullptr;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> outputGain { 1.0f };
+    cruz::dsp::EqEngine eq;
+    std::atomic<double> currentSampleRate { 48000.0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CruzEQAudioProcessor)
 };

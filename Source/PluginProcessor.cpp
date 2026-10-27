@@ -5,27 +5,18 @@ CruzEQAudioProcessor::CruzEQAudioProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      state (*this, nullptr, "CruzEQ", createParameterLayout())
+      state (*this, nullptr, "CruzEQ", Params::createLayout())
 {
-    outputGainDb = state.getRawParameterValue (ParamIDs::outputGain);
-}
+    for (int b = 0; b < Params::numBands; ++b)
+        bands[(size_t) b] = Params::BandRefs::fromState (state, b);
 
-juce::AudioProcessorValueTreeState::ParameterLayout CruzEQAudioProcessor::createParameterLayout()
-{
-    juce::AudioProcessorValueTreeState::ParameterLayout layout;
-
-    layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamIDs::outputGain, 1 },
-        "Output Gain",
-        juce::NormalisableRange<float> { -24.0f, 24.0f, 0.01f },
-        0.0f,
-        juce::AudioParameterFloatAttributes().withLabel ("dB")));
-
-    return layout;
+    outputGainDb = state.getRawParameterValue (Params::outputGain);
 }
 
 void CruzEQAudioProcessor::prepareToPlay (double sampleRate, int)
 {
+    currentSampleRate = sampleRate;
+    eq.prepare (sampleRate);
     outputGain.reset (sampleRate, 0.02);
     outputGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (outputGainDb->load()));
 }
@@ -49,23 +40,35 @@ void CruzEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     for (auto ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, numSamples);
 
+    for (int b = 0; b < Params::numBands; ++b)
+    {
+        const auto& band = bands[(size_t) b];
+        eq.setBand (b, { band.isActive(), band.read() });
+    }
+
+    preEqFifo.push (buffer);
+    eq.process (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), numSamples);
+
     outputGain.setTargetValue (juce::Decibels::decibelsToGain (outputGainDb->load()));
 
-    if (! outputGain.isSmoothing())
+    if (outputGain.isSmoothing())
+    {
+        const auto numChannels = buffer.getNumChannels();
+
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const auto g = outputGain.getNextValue();
+
+            for (int ch = 0; ch < numChannels; ++ch)
+                buffer.getWritePointer (ch)[i] *= g;
+        }
+    }
+    else
     {
         buffer.applyGain (outputGain.getTargetValue());
-        return;
     }
 
-    const auto numChannels = buffer.getNumChannels();
-
-    for (int i = 0; i < numSamples; ++i)
-    {
-        const auto g = outputGain.getNextValue();
-
-        for (int ch = 0; ch < numChannels; ++ch)
-            buffer.getWritePointer (ch)[i] *= g;
-    }
+    postEqFifo.push (buffer);
 }
 
 juce::AudioProcessorEditor* CruzEQAudioProcessor::createEditor()

@@ -61,11 +61,6 @@ target_include_directories(CruzEQTests PRIVATE Source)
 target_link_libraries(CruzEQTests PRIVATE juce::juce_recommended_config_flags)
 add_test(NAME dsp COMMAND CruzEQTests)
 
-add_subdirectory(plugins/CruzOpto)
-add_subdirectory(plugins/CruzFET)
-add_subdirectory(plugins/CruzVerb)
-add_subdirectory(plugins/CruzSynth)
-add_subdirectory(plugins/CruzTape)
-add_subdirectory(plugins/CruzDrive)
-add_subdirectory(plugins/CruzEcho)
-add_subdirectory(plugins/CruzLimiter)
+# Every other plugin lives in its own folder under plugins/ and is picked up
+# automatically, so adding a plugin never needs a change to this file.
+add_subdirectory(plugins)

@@ -5,12 +5,10 @@ on:
     branches: [main]
     paths:
       - "plugins/CruzSynth/**"
-      - "CMakeLists.txt"
       - ".github/workflows/build-cruzsynth.yml"
   pull_request:
     paths:
       - "plugins/CruzSynth/**"
-      - "CMakeLists.txt"
       - ".github/workflows/build-cruzsynth.yml"
   workflow_dispatch:
 

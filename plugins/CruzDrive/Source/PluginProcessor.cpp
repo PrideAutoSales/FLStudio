@@ -196,9 +196,9 @@ void CruzDriveProcessor::setCurrentProgram (int index)
     currentProgram = index;
     const auto& p = presets[index];
 
-    auto set = [this] (const char* id, float value)
+    auto set = [this] (const char* paramID, float value)
     {
-        if (auto* param = state.getParameter (id))
+        if (auto* param = state.getParameter (paramID))
             param->setValueNotifyingHost (param->convertTo0to1 (value));
     };
 

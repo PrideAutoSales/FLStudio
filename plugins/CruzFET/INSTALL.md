@@ -17,7 +17,8 @@ Cruz FET is a FET peak compressor (the fast, punchy, aggressive kind). You only 
    bash ~/Downloads/CruzFET-mac/install.sh
    ```
 
-3. When it says **Cruz FET is installed**, you can close Terminal.
+3. It asks for your Mac login password, because the plugin goes in `/Library/Audio/Plug-Ins`, the folder FL Studio scans. Type it and press Return. Nothing appears while you type, which is normal.
+4. When it says **Done**, you can close Terminal.
 
 ## 3. Load it in FL Studio
 
@@ -34,3 +35,5 @@ To update later, delete the old **CruzFET-mac** folder in Downloads, then repeat
 - **Ratio** 4, 8, 12, 20, or **ALL** for the "all buttons in" sound: very aggressive, great on drum rooms and parallel smash.
 - **Mix** blends in the dry signal for parallel compression.
 - The meter shows gain reduction (GR) or output level.
+
+If the plugin does not show up, check that FL Studio's plugin search paths include `/Library/Audio/Plug-Ins/VST3`, then scan again.

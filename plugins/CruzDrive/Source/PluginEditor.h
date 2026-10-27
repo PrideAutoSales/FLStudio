@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "EditorRedrawGuard.h"
 
 namespace DriveUI
 {
@@ -64,6 +65,10 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    // Draw on the main thread instead of in the background. Some hosts (FL
+    // Studio on macOS) otherwise show an empty window on the first open.
+    bool wantsLayerBackedView() const override { return false; }
+
 private:
     void timerCallback() override;
     void refreshPresetBox();
@@ -83,6 +88,8 @@ private:
 
     // Panel rectangles, set in resized() and drawn in paint().
     juce::Rectangle<int> characterPanel, drivePanel, crushPanel, outputPanel;
+
+    cruz::EditorRedrawGuard redrawGuard { *this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CruzDriveEditor)
 };

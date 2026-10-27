@@ -14,12 +14,16 @@ grit to vocals, drums, bass, synths and buses.
    bash ~/Downloads/CruzDrive-mac/install.sh
    ```
 
-5. When it says **Cruz Drive is installed**, close Terminal.
-6. In FL Studio, open **Options > Manage plugins**, click **Find installed plugins**, and wait for the scan.
-7. In the **Mixer**, click an empty effect slot and choose **Cruz Drive**.
+5. It asks for your **Mac login password**, because it puts the plugin in `/Library/Audio/Plug-Ins`, the folder FL Studio scans. Type it and press Return. Nothing appears while you type, which is normal.
+6. When it says **Done**, close Terminal.
+7. In FL Studio, open **Options > Manage plugins**, click **Find installed plugins**, and wait for the scan.
+8. In the **Mixer**, click an empty effect slot and choose **Cruz Drive**.
 
 To update later, delete the old **CruzDrive-mac** folder in Downloads, repeat
-steps 1 to 5, and restart FL Studio.
+steps 1 to 6, and restart FL Studio.
+
+If Cruz Drive does not show up, check that FL Studio's plugin search paths
+include `/Library/Audio/Plug-Ins/VST3`, then scan again.
 
 ## The controls
 

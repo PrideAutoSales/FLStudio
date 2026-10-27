@@ -15,11 +15,15 @@ appear under the **Artifacts** section of each run on the **Actions** tab.
 ## Roadmap
 
 1. **Project setup** (done): plugin skeleton, automatic Mac build, install guide.
-2. **First playable EQ** (this version): 24 zero-latency bands with bell, shelf, tilt,
+2. **First playable EQ** (done): 24 zero-latency bands with bell, shelf, tilt,
    cut (6 to 96 dB/oct), notch and band pass shapes, draggable band dots, and a live
    pre/post spectrum analyzer.
-3. **Feature parity**: linear and natural phase modes, dynamic EQ, spectral dynamics,
-   mid/side and left/right processing, EQ match, auto gain, and the remaining shapes and slopes.
+3. **Feature parity** (in progress):
+   - 3a (this version): per-band stereo placement (left, right, mid, side), slopes for
+     shelves, notches and band passes, a flat tilt shape, auto gain and gain scale.
+   - 3b: dynamic EQ on every band.
+   - 3c: linear phase and natural phase modes.
+   - 3d: EQ match and spectral dynamics.
 4. **Polish and benchmark**: CPU, latency and sound compared side by side in real sessions.
 
 ## Using the EQ
@@ -30,7 +34,16 @@ appear under the **Artifacts** section of each run on the **Actions** tab.
 - **Change Q:** scroll over a dot, or use the Q knob.
 - **Bypass a band:** Option-click its dot, or tick Bypass.
 - **Remove a band:** double-click its dot, or click Remove.
-- **More options:** right-click a dot to change its shape or slope.
+- **More options:** right-click a dot to change its shape, slope or stereo placement.
+- **Stereo placement:** pick Stereo, Left, Right, Mid or Side in the band's Stereo box.
+  The dot shows L, R, M or S, and the display draws a second curve (with a legend)
+  for the other channel.
+- **Flat Tilt:** tilts the whole spectrum at a steady dB per octave around the band's
+  frequency. Gain sets the total change from 20 Hz to 20 kHz.
+- **Auto gain:** keeps the overall level about the same while you boost or cut. The
+  amount it applies is shown next to the switch.
+- **Gain Scale:** scales every band's gain at once (100% is as set, 0% is flat,
+  200% doubles it).
 
 ## How the filters work
 

@@ -11,14 +11,67 @@ CruzEQAudioProcessor::CruzEQAudioProcessor()
         bands[(size_t) b] = Params::BandRefs::fromState (state, b);
 
     outputGainDb = state.getRawParameterValue (Params::outputGain);
+    autoGainOn = state.getRawParameterValue (Params::autoGain);
+    gainScale = state.getRawParameterValue (Params::gainScale);
 }
 
 void CruzEQAudioProcessor::prepareToPlay (double sampleRate, int)
 {
     currentSampleRate = sampleRate;
     eq.prepare (sampleRate);
-    outputGain.reset (sampleRate, 0.02);
-    outputGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (outputGainDb->load()));
+    updateTargets();
+    autoGainDirty = true;
+    autoGainCountdown = 0;
+    outputGain.reset (sampleRate, 0.05);
+    outputGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (totalOutputGainDb (0)));
+}
+
+void CruzEQAudioProcessor::updateTargets() noexcept
+{
+    using cruz::dsp::exactlyEqual;
+    const auto scale = gainScale->load() / 100.0f;
+
+    for (int b = 0; b < Params::numBands; ++b)
+    {
+        const auto& band = bands[(size_t) b];
+        cruz::dsp::BandTarget t { band.isActive(), band.read(), band.placement() };
+        t.params.gainDb *= scale;
+
+        auto& old = targets[(size_t) b];
+        const bool changed = t.active != old.active || t.placement != old.placement
+                          || t.params.shape != old.params.shape || t.params.slopeDbPerOct != old.params.slopeDbPerOct
+                          || ! exactlyEqual (t.params.freqHz, old.params.freqHz) || ! exactlyEqual (t.params.gainDb, old.params.gainDb)
+                          || ! exactlyEqual (t.params.q, old.params.q);
+
+        if (changed)
+        {
+            autoGainDirty = true;
+            old = t;
+        }
+    }
+}
+
+float CruzEQAudioProcessor::totalOutputGainDb (int numSamples) noexcept
+{
+    float autoDb = 0.0f;
+
+    if (autoGainOn->load() >= 0.5f)
+    {
+        // Measuring the curve costs a little, so while bands move it is redone at most every 20 ms.
+        autoGainCountdown -= numSamples;
+
+        if (autoGainDirty && autoGainCountdown <= 0)
+        {
+            autoGainEstimateDb = cruz::dsp::averageGainDb (targets, currentSampleRate.load());
+            autoGainDirty = false;
+            autoGainCountdown = (int) (0.02 * currentSampleRate.load());
+        }
+
+        autoDb = (float) juce::jlimit (-24.0, 24.0, -autoGainEstimateDb);
+    }
+
+    autoGainDb = autoDb;
+    return outputGainDb->load() + autoDb;
 }
 
 bool CruzEQAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -40,16 +93,15 @@ void CruzEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     for (auto ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, numSamples);
 
+    updateTargets();
+
     for (int b = 0; b < Params::numBands; ++b)
-    {
-        const auto& band = bands[(size_t) b];
-        eq.setBand (b, { band.isActive(), band.read() });
-    }
+        eq.setBand (b, targets[(size_t) b]);
 
     preEqFifo.push (buffer);
     eq.process (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), numSamples);
 
-    outputGain.setTargetValue (juce::Decibels::decibelsToGain (outputGainDb->load()));
+    outputGain.setTargetValue (juce::Decibels::decibelsToGain (totalOutputGainDb (numSamples)));
 
     if (outputGain.isSmoothing())
     {

@@ -4,7 +4,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-// Controls for the selected band: shape, slope, frequency, gain, Q, bypass.
+// Controls for the selected band: shape, slope, stereo placement, frequency,
+// gain, Q, bypass.
 class BandPanel final : public juce::Component,
                         private juce::Timer
 {
@@ -20,6 +21,7 @@ public:
 private:
     void timerCallback() override;
     void updateEnablement();
+    std::vector<juce::Component*> bandControls();
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
@@ -29,13 +31,13 @@ private:
     int band = -1;
 
     juce::Label title, hint;
-    juce::ComboBox shapeBox, slopeBox;
+    juce::ComboBox shapeBox, slopeBox, placeBox;
     juce::Slider freqSlider, gainSlider, qSlider;
-    juce::Label shapeLabel, slopeLabel, freqLabel, gainLabel, qLabel;
+    juce::Label shapeLabel, slopeLabel, placeLabel, freqLabel, gainLabel, qLabel;
     juce::ToggleButton bypassButton { "Bypass" };
     juce::TextButton removeButton { "Remove" };
 
-    std::unique_ptr<ComboBoxAttachment> shapeAttachment, slopeAttachment;
+    std::unique_ptr<ComboBoxAttachment> shapeAttachment, slopeAttachment, placeAttachment;
     std::unique_ptr<SliderAttachment> freqAttachment, gainAttachment, qAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
 

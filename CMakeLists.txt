@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Must be set before project() to take effect.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(CruzEQ VERSION 0.2.0)
+project(CruzEQ VERSION 0.3.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

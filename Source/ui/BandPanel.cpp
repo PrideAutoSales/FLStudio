@@ -35,12 +35,14 @@ BandPanel::BandPanel (CruzEQAudioProcessor& p)
 
     shapeBox.addItemList (Params::shapeNames(), 1);
     slopeBox.addItemList (Params::slopeNames(), 1);
+    placeBox.addItemList (Params::placementNames(), 1);
 
     for (auto* s : { &freqSlider, &gainSlider, &qSlider })
         setUpKnob (*s);
 
     setUpLabel (shapeLabel, "Shape");
     setUpLabel (slopeLabel, "Slope");
+    setUpLabel (placeLabel, "Stereo");
     setUpLabel (freqLabel, "Frequency");
     setUpLabel (gainLabel, "Gain");
     setUpLabel (qLabel, "Q");
@@ -59,19 +61,25 @@ BandPanel::BandPanel (CruzEQAudioProcessor& p)
             onRemove();
     };
 
-    for (juce::Component* c : std::initializer_list<juce::Component*> { &shapeBox, &slopeBox, &freqSlider, &gainSlider, &qSlider,
-                                                                          &shapeLabel, &slopeLabel, &freqLabel, &gainLabel, &qLabel,
-                                                                          &bypassButton, &removeButton })
+    for (auto* c : bandControls())
         addChildComponent (c);
 
     setBand (-1);
     startTimerHz (15);
 }
 
+std::vector<juce::Component*> BandPanel::bandControls()
+{
+    return { &shapeBox, &slopeBox, &placeBox, &freqSlider, &gainSlider, &qSlider,
+             &shapeLabel, &slopeLabel, &placeLabel, &freqLabel, &gainLabel, &qLabel,
+             &bypassButton, &removeButton };
+}
+
 void BandPanel::setBand (int index)
 {
     shapeAttachment.reset();
     slopeAttachment.reset();
+    placeAttachment.reset();
     freqAttachment.reset();
     gainAttachment.reset();
     qAttachment.reset();
@@ -80,9 +88,7 @@ void BandPanel::setBand (int index)
     band = index;
     const bool show = band >= 0;
 
-    for (juce::Component* c : std::initializer_list<juce::Component*> { &shapeBox, &slopeBox, &freqSlider, &gainSlider, &qSlider,
-                                                                          &shapeLabel, &slopeLabel, &freqLabel, &gainLabel, &qLabel,
-                                                                          &bypassButton, &removeButton })
+    for (auto* c : bandControls())
         c->setVisible (show);
 
     hint.setVisible (! show);
@@ -92,6 +98,7 @@ void BandPanel::setBand (int index)
         auto& state = processor.getState();
         shapeAttachment = std::make_unique<ComboBoxAttachment> (state, Params::bandId (band, BandField::shape), shapeBox);
         slopeAttachment = std::make_unique<ComboBoxAttachment> (state, Params::bandId (band, BandField::slope), slopeBox);
+        placeAttachment = std::make_unique<ComboBoxAttachment> (state, Params::bandId (band, BandField::place), placeBox);
         freqAttachment = std::make_unique<SliderAttachment> (state, Params::bandId (band, BandField::freq), freqSlider);
         gainAttachment = std::make_unique<SliderAttachment> (state, Params::bandId (band, BandField::gain), gainSlider);
         qAttachment = std::make_unique<SliderAttachment> (state, Params::bandId (band, BandField::q), qSlider);
@@ -134,8 +141,10 @@ void BandPanel::updateEnablement()
     const auto shape = processor.getBand (band).read().shape;
     gainSlider.setEnabled (cruz::dsp::shapeUsesGain (shape));
     slopeBox.setEnabled (cruz::dsp::shapeUsesSlope (shape));
+    qSlider.setEnabled (cruz::dsp::shapeUsesQ (shape));
     gainLabel.setEnabled (gainSlider.isEnabled());
     slopeLabel.setEnabled (slopeBox.isEnabled());
+    qLabel.setEnabled (qSlider.isEnabled());
 }
 
 void BandPanel::paint (juce::Graphics& g)
@@ -147,7 +156,7 @@ void BandPanel::paint (juce::Graphics& g)
 void BandPanel::resized()
 {
     auto area = getLocalBounds().reduced (12, 8);
-    auto left = area.removeFromLeft (150);
+    auto left = area.removeFromLeft (130);
 
     title.setBounds (left.removeFromTop (24));
 
@@ -163,11 +172,13 @@ void BandPanel::resized()
     removeButton.setBounds (left.removeFromTop (24).withWidth (90));
 
     auto combos = area.removeFromLeft (150);
-    shapeLabel.setBounds (combos.removeFromTop (16));
-    shapeBox.setBounds (combos.removeFromTop (26));
-    combos.removeFromTop (8);
-    slopeLabel.setBounds (combos.removeFromTop (16));
-    slopeBox.setBounds (combos.removeFromTop (26));
+
+    for (auto [label, box] : { std::pair { &shapeLabel, &shapeBox }, std::pair { &slopeLabel, &slopeBox }, std::pair { &placeLabel, &placeBox } })
+    {
+        label->setBounds (combos.removeFromTop (14));
+        box->setBounds (combos.removeFromTop (22));
+        combos.removeFromTop (4);
+    }
 
     area.removeFromLeft (12);
     const int knobWidth = juce::jmin (110, area.getWidth() / 3);

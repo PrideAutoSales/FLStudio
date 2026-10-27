@@ -66,15 +66,15 @@ struct Biquad
         setNormalised ((1 + c) / 2, -(1 + c), (1 + c) / 2, 1 + alpha, -2 * c, 1 - alpha);
     }
 
-    // First-order shelf (1 + s/wz) / (1 + s/wp), bilinear with prewarping.
-    // Swapping wz and wp gives the exact inverse, which is how record and
-    // playback emphasis cancel out for small signals.
-    void setFirstOrderShelf (double fs, double fz, double fp)
+    // First-order shelf g (1 + s/wz) / (1 + s/wp), bilinear with prewarping.
+    // Swapping wz and wp and inverting g gives the exact inverse, which is how
+    // record and playback emphasis cancel out for small signals.
+    void setFirstOrderShelf (double fs, double fz, double fp, double g = 1.0)
     {
         const auto warp = [fs] (double f) { return 2 * fs * std::tan (pi * clampFreq (f, fs) / fs); };
         const auto wz = warp (fz), wp = warp (fp);
         const auto k = 2 * fs;
-        setNormalised (1 + k / wz, 1 - k / wz, 0, 1 + k / wp, 1 - k / wp, 0);
+        setNormalised (g * (1 + k / wz), g * (1 - k / wz), 0, 1 + k / wp, 1 - k / wp, 0);
     }
 };
 
@@ -338,11 +338,12 @@ public:
         recordHf.setFirstOrderShelf (fs, fz, fz * 4);
         playHf.setFirstOrderShelf (fs, fz * 4, fz);
 
-        // NAB also adds low frequency emphasis around 50 Hz.
+        // NAB also records the deep lows quieter and lifts them on playback,
+        // so bass below about 50 Hz saturates a little less.
         if (s.emphasis == 0)
         {
-            recordLf.setFirstOrderShelf (fs, 150.0, 50.0);
-            playLf.setFirstOrderShelf (fs, 50.0, 150.0);
+            recordLf.setFirstOrderShelf (fs, 50.0, 150.0, 1.0 / 3.0);
+            playLf.setFirstOrderShelf (fs, 150.0, 50.0, 3.0);
         }
         else
         {

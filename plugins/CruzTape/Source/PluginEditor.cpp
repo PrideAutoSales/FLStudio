@@ -31,7 +31,7 @@ TapeLookAndFeel::TapeLookAndFeel()
 }
 
 void TapeLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
-                                        float rotaryStartAngle, float rotaryEndAngle, juce::Slider&)
+                                        float rotaryStartAngle, float rotaryEndAngle, juce::Slider& slider)
 {
     const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (6.0f);
     const auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) / 2.0f;
@@ -48,9 +48,13 @@ void TapeLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int wid
         g.drawLine ({ p1, p2 }, 1.2f);
     }
 
-    // Value arc.
+    // Value arc. Controls that go both ways (like Bias) draw it from zero.
+    const auto bipolar = slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0;
+    const auto zeroPos = (float) slider.valueToProportionOfLength (0.0);
+    const auto arcStart = bipolar ? rotaryStartAngle + zeroPos * (rotaryEndAngle - rotaryStartAngle) : rotaryStartAngle;
+
     juce::Path arc;
-    arc.addCentredArc (centre.x, centre.y, radius - 10.0f, radius - 10.0f, 0.0f, rotaryStartAngle, angle, true);
+    arc.addCentredArc (centre.x, centre.y, radius - 10.0f, radius - 10.0f, 0.0f, arcStart, angle, true);
     g.setColour (Palette::amber.withAlpha (0.85f));
     g.strokePath (arc, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
@@ -162,7 +166,7 @@ namespace
     // VU scales are linear in voltage, which bunches the low end together.
     float vuPosition (float db)
     {
-        const auto v = std::pow (10.0f, juce::jlimit (vuMin - 2.0f, vuMax + 1.0f, db) / 20.0f);
+        const auto v = std::pow (10.0f, juce::jlimit (vuMin - 1.0f, vuMax + 0.4f, db) / 20.0f);
         const auto lo = std::pow (10.0f, vuMin / 20.0f), hi = std::pow (10.0f, vuMax / 20.0f);
         return (v - lo) / (hi - lo);
     }
@@ -190,7 +194,7 @@ void VuMeter::paint (juce::Graphics& g)
 
     const auto pivot = juce::Point<float> (face.getCentreX(), face.getBottom() + face.getHeight() * 0.35f);
     const auto radius = face.getHeight() * 1.05f;
-    const auto spread = 0.85f;
+    const auto spread = 0.62f;
     const auto angleFor = [spread] (float db) { return -spread + 2.0f * spread * vuPosition (db); };
 
     // Red zone above 0 VU.
@@ -201,16 +205,16 @@ void VuMeter::paint (juce::Graphics& g)
 
     g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
 
-    for (auto db : { -20.0f, -10.0f, -7.0f, -5.0f, -3.0f, -2.0f, -1.0f, 0.0f, 1.0f, 2.0f, 3.0f })
+    for (auto db : { -20, -10, -7, -5, -3, -2, -1, 0, 1, 2, 3 })
     {
-        const auto a = angleFor (db);
-        g.setColour (db > 0.0f ? Palette::red : Palette::bodyDark);
+        const auto a = angleFor ((float) db);
+        g.setColour (db > 0 ? Palette::red : Palette::bodyDark);
         g.drawLine ({ pivot.getPointOnCircumference (radius * 0.80f, a), pivot.getPointOnCircumference (radius * 0.92f, a) }, 1.2f);
 
-        if (db == -20.0f || db == -10.0f || db == -5.0f || db == -3.0f || db == 0.0f || db == 3.0f)
+        if (db == -20 || db == -10 || db == -5 || db == -3 || db == 0 || db == 3)
         {
             const auto t = pivot.getPointOnCircumference (radius * 1.0f, a);
-            const auto text = db > 0.0f ? "+" + juce::String ((int) db) : juce::String ((int) db);
+            const auto text = db > 0 ? "+" + juce::String (db) : juce::String (db);
             g.drawText (text, juce::Rectangle<float> (26.0f, 12.0f).withCentre (t), juce::Justification::centred);
         }
     }
@@ -344,13 +348,13 @@ CruzTapeAudioProcessorEditor::CruzTapeAudioProcessorEditor (CruzTapeAudioProcess
     addAndMakeVisible (autoGain);
     autoGain.setTooltip ("Keeps the level steady when you turn Input up, so you only hear the added saturation.");
 
-    addKnob (input, ParamIDs::input, "INPUT");
-    addKnob (bias, ParamIDs::bias, "BIAS");
-    addKnob (wow, ParamIDs::wow, "WOW");
-    addKnob (flutter, ParamIDs::flutter, "FLUTTER");
-    addKnob (hiss, ParamIDs::hiss, "HISS");
-    addKnob (mix, ParamIDs::mix, "MIX");
-    addKnob (output, ParamIDs::output, "OUTPUT");
+    addKnob (input, ParamIDs::input, "INPUT", " dB");
+    addKnob (bias, ParamIDs::bias, "BIAS", " %");
+    addKnob (wow, ParamIDs::wow, "WOW", " %");
+    addKnob (flutter, ParamIDs::flutter, "FLUTTER", " %");
+    addKnob (hiss, ParamIDs::hiss, "HISS", " %");
+    addKnob (mix, ParamIDs::mix, "MIX", " %");
+    addKnob (output, ParamIDs::output, "OUTPUT", " dB");
 
     setSize (840, 540);
     lastTimerTime = juce::Time::getMillisecondCounter();
@@ -362,14 +366,19 @@ CruzTapeAudioProcessorEditor::~CruzTapeAudioProcessorEditor()
     setLookAndFeel (nullptr);
 }
 
-void CruzTapeAudioProcessorEditor::addKnob (Knob& k, const juce::String& paramId, const juce::String& name)
+void CruzTapeAudioProcessorEditor::addKnob (Knob& k, const juce::String& paramId, const juce::String& name,
+                                            const juce::String& suffix)
 {
     k.slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     k.slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 80, 18);
+    k.slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    k.slider.setColour (juce::Slider::textBoxTextColourId, Palette::cream);
     k.slider.setRotaryParameters (juce::degreesToRadians (-135.0f), juce::degreesToRadians (135.0f), true);
     addAndMakeVisible (k.slider);
 
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (processor.getState(), paramId, k.slider);
+    k.slider.setNumDecimalPlacesToDisplay (1);
+    k.slider.setTextValueSuffix (suffix);
 
     if (auto* param = processor.getState().getParameter (paramId))
         k.slider.setDoubleClickReturnValue (true, param->convertFrom0to1 (param->getDefaultValue()));

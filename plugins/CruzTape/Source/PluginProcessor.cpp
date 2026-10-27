@@ -208,7 +208,8 @@ void CruzTapeAudioProcessor::processChunk (juce::AudioBuffer<float>& buffer, int
     const auto settingsChanged = needsConfigure
         || s.speed != lastSettings.speed || s.formula != lastSettings.formula
         || s.calibration != lastSettings.calibration || s.emphasis != lastSettings.emphasis
-        || s.bias != lastSettings.bias || s.hiss != lastSettings.hiss || s.outputDb != lastSettings.outputDb;
+        || ! juce::exactlyEqual (s.bias, lastSettings.bias) || ! juce::exactlyEqual (s.hiss, lastSettings.hiss)
+        || ! juce::exactlyEqual (s.outputDb, lastSettings.outputDb);
 
     const auto derived = cruztape::derive (s);
 

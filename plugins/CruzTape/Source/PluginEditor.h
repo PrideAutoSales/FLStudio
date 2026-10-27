@@ -35,7 +35,7 @@ private:
 class VuMeter final : public juce::Component
 {
 public:
-    explicit VuMeter (juce::String label) : label (std::move (label)) {}
+    explicit VuMeter (juce::String name) : label (std::move (name)) {}
 
     void paint (juce::Graphics&) override;
 
@@ -76,7 +76,7 @@ private:
         std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
     };
 
-    void addKnob (Knob&, const juce::String& paramId, const juce::String& name);
+    void addKnob (Knob&, const juce::String& paramId, const juce::String& name, const juce::String& suffix);
     void timerCallback() override;
 
     CruzTapeAudioProcessor& processor;

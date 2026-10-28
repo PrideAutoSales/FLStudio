@@ -44,7 +44,7 @@ private:
     ParamToggle* toFilter;
     WavetableView* view;
     ParamCombo* warp;
-    std::vector<ModKnob*> row1, row2;
+    std::vector<ModKnob*> pitch, row1, row2;
 };
 
 class SubPanel : public Panel
@@ -109,6 +109,20 @@ private:
     std::vector<ModSourceChip*> macroChips, otherChips;
 };
 
+class VoicingPanel : public Panel, private juce::Timer
+{
+public:
+    explicit VoicingPanel (CruzSynthProcessor& p);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    void timerCallback() override;
+    CruzSynthProcessor& proc;
+    std::vector<juce::Component*> toggles, knobs;
+    int lastVoices = -1;
+};
+
 //==============================================================================
 class OscPage : public juce::Component
 {
@@ -123,6 +137,7 @@ private:
     NoisePanel noise;
     FilterPanel filter;
     ModulatorPanel mods;
+    VoicingPanel voicing;
     MacroPanel macros;
 };
 
@@ -148,18 +163,34 @@ private:
 };
 
 //==============================================================================
-class FxPage : public juce::Component
+// Serum-style effects page: the chain on the left (switch modules on and off and
+// change their order), and a scrolling rack of the switched-on modules on the right.
+class FxPage : public juce::Component, private juce::Timer
 {
 public:
     explicit FxPage (CruzSynthProcessor& p);
     ~FxPage() override;
+    void paint (juce::Graphics&) override;
     void resized() override;
-    void refresh() { resized(); repaint(); }
+    void refresh();
 
 private:
-    class FxPanel;
+    class Strip;
+    class ChainRow;
+    void timerCallback() override;
+    void move (int module, int dir);
+    void show (int module);
+    void layoutRack();
+    juce::uint32 onMask() const;
+
     CruzSynthProcessor& proc;
-    std::vector<std::unique_ptr<FxPanel>> panels;
+    std::vector<std::unique_ptr<ChainRow>> rows;     // indexed by module
+    std::vector<std::unique_ptr<Strip>> strips;      // indexed by module
+    juce::Viewport viewport;
+    juce::Component rack;
+    juce::Rectangle<int> listArea, rackArea;
+    juce::uint32 lastMask = 0xffffffff;
+    int focus = -1;
 };
 
 //==============================================================================

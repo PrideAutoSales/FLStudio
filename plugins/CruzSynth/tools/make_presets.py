@@ -22,7 +22,9 @@ DIV = {"8bar": 0, "4bar": 1, "2bar": 2, "1bar": 3, "1/2": 4, "1/2T": 5, "1/4.": 
        "1/4T": 8, "1/8.": 9, "1/8": 10, "1/8T": 11, "1/16.": 12, "1/16": 13, "1/16T": 14, "1/32": 15}
 LP12, LP24, LADDER, HP12, HP24, BP12, BP24, NOTCH, PEAK, COMBP, COMBM, VOWEL = range(12)
 W_OFF, W_SYNC, W_BENDP, W_BENDM, W_ASYM, W_PWM, W_MIRROR, W_FLIP, W_QUANT, W_FM, W_AM, W_RM = range(12)
-TUBE, SOFT, HARD, FOLD, CRUSH, DOWNS = range(6)
+TUBE, SOFT, HARD, FOLD, CRUSH, DOWNS, DIODE, LFOLD, ASYM, RECT, SQUASH, FUZZ, TAPE = range(13)
+F_LP12, F_LP24, F_HP12, F_HP24, F_BP12, F_BP24, F_NOTCH, F_PEAK = range(8)        # FX filter types
+HALL, PLATE, ROOM = range(3)
 SINE_L, TRI_L, SAWUP_L, SAWDN_L, SQUARE_L, CUSTOM_L, SH_L, DRIFT_L = range(8)
 FREE, RETRIG, ENVMODE = range(3)
 TABLES = ["Basic Shapes", "Harmonic Sweep", "Pulse Width", "Vowel Morph", "Sync Sweep", "FM Growl",
@@ -33,13 +35,18 @@ SOURCES = ["Env1", "Env2", "Env3", "Lfo1", "Lfo2", "Lfo3", "Lfo4", "Velocity", "
 DESTS = ["OscACoarse", "OscAFine", "OscAPos", "OscADetune", "OscABlend", "OscAWarp", "OscAPhase", "OscAPan",
          "OscALevel", "OscBCoarse", "OscBFine", "OscBPos", "OscBDetune", "OscBBlend", "OscBWarp", "OscBPhase",
          "OscBPan", "OscBLevel", "SubLevel", "SubPan", "NoiseLevel", "NoisePan", "NoiseColor", "FltCutoff",
-         "FltRes", "FltDrive", "FltMix", "Lfo1Rate", "Lfo2Rate", "Lfo3Rate", "Lfo4Rate", "MasterVol"]
+         "FltRes", "FltDrive", "FltMix", "Lfo1Rate", "Lfo2Rate", "Lfo3Rate", "Lfo4Rate", "MasterVol",
+         "FxHypDetune", "FxHypMix", "FxHypWide", "FxDistDrive", "FxDistFreq", "FxDistMix",
+         "FxFlaFeedback", "FxFlaMix", "FxPhaFreq", "FxPhaFeedback", "FxPhaMix",
+         "FxChoDepth", "FxChoMix", "FxDlyFeedback", "FxDlyMix", "FxMbDepth",
+         "FxEqLowGain", "FxEqHighGain", "FxFilCutoff", "FxFilRes", "FxFilDrive", "FxFilMix",
+         "FxRevSize", "FxRevDecay", "FxRevMix"]
 
 
 def param_ids():
     """Every parameter ID createParameterLayout() makes, to catch typos here."""
     text = open(os.path.join(SRC, "Parameters.cpp")).read()
-    ids = set(re.findall(r'add<AP\w>\s*\(L,\s*"(\w+)"', text))
+    ids = set(re.findall(r'add3?<AP\w>\s*\(L,\s*"(\w+)"', text))
     osc = re.findall(r'id::osc \(o, "(\w+)"\)', text)
     env = re.findall(r'id::env \(e, "(\w+)"\)', text)
     lfo = re.findall(r'id::lfo \(l, "(\w+)"\)', text)
@@ -176,13 +183,60 @@ def phaser(p, rate=0.4, depth=0.6, mix=0.5, freq=800.0, fb=0.5):
                  fx_pha_feedback=fb)
 
 
-def delay(p, div="1/8.", mix=0.2, fb=0.35, hicut=6000.0, pingpong=True):
-    return p.set(fx_dly_on=True, fx_dly_sync=True, fx_dly_div=DIV[div], fx_dly_mix=mix, fx_dly_feedback=fb,
-                 fx_dly_hicut=hicut, fx_dly_pingpong=pingpong)
+def delay(p, div="1/8.", mix=0.2, fb=0.35, hicut=6000.0, pingpong=True, lowcut=None, offset=None):
+    p.set(fx_dly_on=True, fx_dly_sync=True, fx_dly_div=DIV[div], fx_dly_mix=mix, fx_dly_feedback=fb,
+          fx_dly_hicut=hicut, fx_dly_pingpong=pingpong)
+    if lowcut is not None:
+        p.set(fx_dly_lowcut=lowcut)
+    if offset is not None:
+        p.set(fx_dly_offset=offset)
+    return p
 
 
-def reverb(p, mix=0.25, size=0.6, damp=0.5, width=1.0):
-    return p.set(fx_rev_on=True, fx_rev_mix=mix, fx_rev_size=size, fx_rev_damp=damp, fx_rev_width=width)
+def reverb(p, mix=0.25, size=0.6, damp=0.5, width=1.0, decay=None, mode=HALL, pre=0.0, lowcut=120.0,
+           hicut=9000.0):
+    """Decay follows the size unless given, so bigger rooms ring longer."""
+    if decay is None:
+        decay = round(0.5 + 4.0 * size * size, 2)
+    p.set(fx_rev_on=True, fx_rev_mix=mix, fx_rev_size=size, fx_rev_damp=damp, fx_rev_width=width,
+          fx_rev_decay=decay, fx_rev_lowcut=lowcut, fx_rev_hicut=hicut)
+    if mode != HALL:
+        p.set(fx_rev_mode=mode)
+    if pre:
+        p.set(fx_rev_predelay=pre)
+    return p
+
+
+def hyper(p, rate=0.8, detune=0.3, voices=4, mix=0.5, wide=0.0, size=0.5):
+    return p.set(fx_hyp_on=True, fx_hyp_rate=rate, fx_hyp_detune=detune, fx_hyp_voices=voices, fx_hyp_mix=mix,
+                 fx_hyp_wide=wide, fx_hyp_size=size)
+
+
+def flanger(p, rate=0.3, depth=0.6, fb=0.5, mix=0.5, spread=0.25, div=None):
+    p.set(fx_fla_on=True, fx_fla_rate=rate, fx_fla_depth=depth, fx_fla_feedback=fb, fx_fla_mix=mix,
+          fx_fla_spread=spread)
+    if div:
+        p.set(fx_fla_sync=True, fx_fla_div=DIV[div])
+    return p
+
+
+def multiband(p, depth=0.6, time=0.5, up=0.4, down=1.0, low=0.0, mid=0.0, high=0.0, gain=0.0):
+    return p.set(fx_mb_on=True, fx_mb_depth=depth, fx_mb_time=time, fx_mb_up=up, fx_mb_down=down, fx_mb_low=low,
+                 fx_mb_mid=mid, fx_mb_high=high, fx_mb_gain=gain)
+
+
+def fxfilter(p, kind=F_LP12, cutoff=2000.0, res=0.2, drive=0.0, stereo=0.0, mix=1.0):
+    return p.set(fx_fil_on=True, fx_fil_type=kind, fx_fil_cutoff=cutoff, fx_fil_res=res, fx_fil_drive=drive,
+                 fx_fil_stereo=stereo, fx_fil_mix=mix)
+
+
+def space_macros(p):
+    """Macro 3 opens the reverb and Macro 4 the delay, on the presets that use them."""
+    if p.v.get("fx_rev_on"):
+        p.mod("Macro3", "FxRevMix", 0.3)
+    if p.v.get("fx_dly_on"):
+        p.mod("Macro4", "FxDlyMix", 0.3)
+    return p
 
 
 def comp(p, thresh=-18.0, ratio=4.0, multi=False, upward=0.0, attack=5.0, release=120.0, gain=0.0, mix=1.0):
@@ -421,6 +475,7 @@ def supersaw_lead(name, uni=9, det=0.5, cutoff=7000, octave_b=1, b_table="Basic 
         p.mod("Env3", "OscACoarse", -pitch_up)
     if drive:
         dist(p, SOFT, drive, 0.8, 0.6)
+    hyper(p, 0.7, 0.25, 4, 0.3, 0.35)
     delay(p, dly, 0.18, 0.35, 5000)
     reverb(p, rev, 0.7)
     eq(p, 200, -3, 8000, 2)
@@ -428,6 +483,7 @@ def supersaw_lead(name, uni=9, det=0.5, cutoff=7000, octave_b=1, b_table="Basic 
         mono(p, glide, legato=True)
     else:
         poly(p, 8)
+    p.mod("Macro3", "FxHypMix", 0.4)
     return macros(p, "FltCutoff", 0.3, "OscADetune", 0.35)
 
 
@@ -973,6 +1029,232 @@ def build_synths():
     arp_synth("Formant Chop", "Talk Growl", 0.3, div="1/16", amount=0.8, decay=0.2, cutoff=6000)
 
 
+# ================================================================ DEEP HOUSE and MINIMAL
+def bassline(cat, name, table, pos, cutoff=600, res=0.2, env_amt=0.3, decay=0.25, sus=0.8, glide=0.04,
+             sub_lvl=0.5, drive=0.15, filt=LADDER, pitch=0.0, rel=0.08, octave=-1, uni=1, det=0.1, legato=False,
+             b=None, dly=None, lfo_cut=0.0, lfo_div="1/4"):
+    """A mono bassline voice: one oscillator, sub, enveloped filter, a touch of tape."""
+    p = new(cat, name)
+    osc(p, "A", table, pos, uni=uni, det=det, octave=octave, rand=0.0)
+    if b:
+        osc(p, "B", **b)
+    if sub_lvl:
+        sub(p, -1, sub_lvl)
+    amp(p, 0.002, max(decay * 2.0, 0.3), sus, rel)
+    flt(p, filt, cutoff, res, 0.2, 0.3)
+    env2(p, 0.0, decay, 0.0, 0.1)
+    p.mod("Env2", "FltCutoff", env_amt)
+    p.mod("Velocity", "FltCutoff", 0.1)
+    if pitch:
+        env3(p, 0.0, 0.06, 0.0, 0.05)
+        p.mod("Env3", "OscACoarse", pitch)
+    if lfo_cut:
+        lfo(p, 1, div=lfo_div, shape=SINE_L, mode=RETRIG)
+        p.mod("Lfo1", "FltCutoff", lfo_cut, True)
+    if drive:
+        dist(p, TAPE, drive, 0.6)
+    if dly:
+        delay(p, dly, 0.12, 0.3, 3000, lowcut=300)
+    comp(p, -20, 4, attack=3, release=80)
+    mono(p, glide, legato)
+    macros(p, "FltCutoff", 0.3, "FltRes", 0.3)
+    return space_macros(p)
+
+
+def part(cat, name, table, pos, uni=1, det=0.2, b=None, atk=0.002, dec=0.5, sus=0.0, rel=0.3, cutoff=3000,
+         res=0.15, env_amt=0.3, fdec=None, filt=LP24, key=0.4, pitch=0.0, pdec=0.05, noise_lvl=0.0, noise_kind=0,
+         chorus_on=False, phaser_on=False, flang=False, hyp=0.0, wide=0.0, tape=0.0, dly=None, dly_mix=0.2,
+         dly_fb=0.4, rev=0.2, size=0.6, rev_mode=HALL, lfo_cut=0.0, lfo_div=None, lfo_rate=0.08, lfo_pos=0.0,
+         tremolo=0.0, fxf=None, gate=None, mono_glide=None, vibrato=0.0, mb=0.0, warp=W_OFF, warp_amt=0.0,
+         vel_pos=0.0, polyn=12):
+    """The general voice behind the deep house and minimal banks: chords, stabs, keys, plucks, pads, leads
+    and percussive blips, depending on the envelope times."""
+    p = new(cat, name)
+    osc(p, "A", table, pos, uni=uni, det=det, warp=warp, warp_amt=warp_amt)
+    if b:
+        osc(p, "B", **b)
+    if noise_lvl:
+        noise(p, noise_kind, noise_lvl, 0.6, True)
+    amp(p, atk, dec, sus, rel)
+    flt(p, filt, cutoff, res, 0.0, key)
+    env2(p, 0.0, fdec if fdec is not None else dec * 0.7, 0.0, rel)
+    p.mod("Env2", "FltCutoff", env_amt)
+    p.mod("Velocity", "FltCutoff", 0.15)
+    if pitch:
+        env3(p, 0.0, pdec, 0.0, 0.05)
+        p.mod("Env3", "OscACoarse", pitch)
+        if b:
+            p.mod("Env3", "OscBCoarse", pitch)
+    if lfo_cut:
+        if lfo_div:
+            lfo(p, 2, div=lfo_div, shape=TRI_L)
+        else:
+            lfo(p, 2, rate=lfo_rate, shape=SINE_L)
+        p.mod("Lfo2", "FltCutoff", lfo_cut, True)
+    if lfo_pos:
+        lfo(p, 1, rate=0.12, shape=DRIFT_L)
+        p.mod("Lfo1", "OscAPos", lfo_pos)
+    if tremolo:
+        lfo(p, 3, rate=4.5)
+        p.mod("Lfo3", "OscAPan", tremolo, True)
+    if vibrato:
+        lfo(p, 3, rate=5.2, rise=0.4)
+        p.mod("Lfo3", "OscAFine", vibrato, True)
+    if gate:
+        lfo(p, 4, div=gate, shape=SQUARE_L, mode=RETRIG)
+        p.mod("Lfo4", "MasterVol", -0.55)
+    if vel_pos:
+        p.mod("Velocity", "OscAPos", vel_pos)
+    if tape:
+        dist(p, TAPE, tape, 0.6, 0.7)
+    if hyp or wide:
+        hyper(p, 0.6, 0.25, 4, hyp, wide)
+    if flang:
+        flanger(p, 0.15, 0.5, 0.35, 0.35)
+    if chorus_on:
+        chorus(p, 0.45, 0.4, 0.4)
+    if phaser_on:
+        phaser(p, 0.2, 0.55, 0.35)
+    if dly:
+        delay(p, dly, dly_mix, dly_fb, 4000, lowcut=250)
+    if rev:
+        reverb(p, rev, size, mode=rev_mode)
+    if mb:
+        multiband(p, mb, 0.5, 0.4, 1.0)
+    if fxf:
+        fxfilter(p, **fxf)
+    if mono_glide is not None:
+        mono(p, mono_glide, True)
+    else:
+        poly(p, polyn)
+    macros(p, "FltCutoff", 0.3, "OscAPos" if table not in ("Sine",) else "FltRes", 0.3)
+    return space_macros(p)
+
+
+def build_deep_house():
+    c = "Deep House"
+    bassline(c, "Nineties Organ Bass", "Organ Bars", 0.35, cutoff=1400, env_amt=0.2, decay=0.18, sus=0.5, sub_lvl=0.45,
+             filt=LP12)
+    bassline(c, "Warm Sub Bass", "Basic Shapes", TRI * 0.5, cutoff=900, env_amt=0.1, sus=0.9, glide=0.06,
+             sub_lvl=0.3, drive=0.2)
+    bassline(c, "Round Bass", "Basic Shapes", SAW, cutoff=380, res=0.3, env_amt=0.35, decay=0.2, sus=0.6)
+    bassline(c, "Lazy Glide Bass", "Basic Shapes", SQUARE, cutoff=520, env_amt=0.25, glide=0.12, legato=True,
+             sus=0.85)
+    bassline(c, "Deep 808 Bass", "Sine", 0.0, cutoff=4000, env_amt=0.0, sus=0.6, decay=0.9, pitch=0.06,
+             sub_lvl=0.0, drive=0.3, glide=0.05)
+    bassline(c, "Velvet Pluck Bass", "Harmonic Sweep", 0.4, cutoff=300, env_amt=0.45, decay=0.14, sus=0.2,
+             dly="1/8.")
+    bassline(c, "Moody Bass", "Hollow Lead", 0.3, cutoff=650, res=0.25, env_amt=0.2, lfo_cut=0.08,
+             lfo_div="1/2", sus=0.9)
+
+    part(c, "Dub Stab Chord", "Chord Stack", 0.25, uni=2, det=0.15, dec=0.35, rel=0.25, cutoff=800, res=0.3,
+         env_amt=0.35, dly="1/4.", dly_mix=0.3, dly_fb=0.55, rev=0.3, size=0.75, lfo_cut=0.12, lfo_div="4bar")
+    part(c, "Minor Nine Stab", "Chord Stack", 0.6, uni=3, det=0.2, dec=0.3, rel=0.25, cutoff=1400, env_amt=0.4,
+         chorus_on=True, dly="1/8.", dly_mix=0.2, rev=0.25)
+    part(c, "Velvet Chords", "Basic Shapes", SAW, uni=5, det=0.3, atk=0.04, dec=1.5, sus=0.7, rel=0.6,
+         cutoff=1800, env_amt=0.15, chorus_on=True, rev=0.35, size=0.75, hyp=0.25)
+    part(c, "Late Night Rhodes", "Sine", 0.0, warp=W_FM, warp_amt=0.18, dec=2.2, sus=0.2, rel=0.6,
+         b=dict(table="Sine", pos=0.0, octave=1, level=0.0), cutoff=4500, env_amt=0.2, tremolo=0.35,
+         chorus_on=True, rev=0.25, tape=0.15)
+    part(c, "Sunset Keys", "Glass Bell", 0.2, dec=1.6, sus=0.15, rel=0.5,
+         b=dict(table="Basic Shapes", pos=TRI, level=0.5), cutoff=3500, env_amt=0.25, chorus_on=True,
+         dly="1/8.", dly_mix=0.15, rev=0.3)
+    part(c, "Soft House Pluck", "Basic Shapes", TRI, uni=3, det=0.2, dec=0.4, rel=0.3, cutoff=1200,
+         env_amt=0.4, dly="1/8.", dly_mix=0.25, rev=0.25)
+    part(c, "Marimba House", "Sine", 0.0, dec=0.3, rel=0.25, b=dict(table="Sine", pos=0.0, octave=2, level=0.25),
+         cutoff=6000, env_amt=0.1, warp=W_FM, warp_amt=0.12, dly="1/8.", dly_mix=0.15, rev=0.2)
+    part(c, "Filtered Strings", "Basic Shapes", SAW, uni=7, det=0.35, atk=0.5, dec=1.5, sus=0.9, rel=1.2,
+         cutoff=700, env_amt=0.0, lfo_cut=0.15, lfo_div="8bar", chorus_on=True, rev=0.4, size=0.8)
+    part(c, "Warm Deep Pad", "Hollow Lead", 0.4, uni=5, det=0.3, atk=0.9, dec=2.0, sus=0.85, rel=2.0,
+         cutoff=1600, env_amt=0.0, lfo_pos=0.3, rev=0.45, size=0.85, hyp=0.3, wide=0.4)
+    part(c, "Deep Pad Wash", "Breath", 0.5, uni=4, det=0.3, atk=1.5, dec=3.0, sus=0.9, rel=3.0, cutoff=2200,
+         env_amt=0.0, lfo_pos=0.4, rev=0.6, size=0.95, rev_mode=HALL, wide=0.5, noise_lvl=0.03, noise_kind=1)
+    part(c, "Vocal Chop Lead", "Vowel Morph", 0.3, dec=0.6, sus=0.4, rel=0.2, cutoff=5000, filt=VOWEL, res=0.4,
+         env_amt=0.15, lfo_pos=0.35, dly="1/8.", dly_mix=0.25, rev=0.25, mono_glide=0.05, vel_pos=0.3)
+    part(c, "Jazz Organ", "Organ Bars", 0.7, dec=0.3, sus=0.85, rel=0.12, cutoff=6000, env_amt=0.05,
+         chorus_on=True, phaser_on=True, rev=0.2, size=0.4, rev_mode=ROOM)
+    part(c, "Shuffle Stab", "Basic Shapes", SQUARE, uni=3, det=0.2, dec=0.18, rel=0.15, cutoff=1500,
+         env_amt=0.45, dly="1/8T", dly_mix=0.25, rev=0.2)
+    part(c, "House Brass Stab", "Basic Shapes", SAW, uni=5, det=0.25, atk=0.01, dec=0.45, sus=0.3, rel=0.2,
+         cutoff=900, res=0.2, env_amt=0.45, fdec=0.25, rev=0.2, mb=0.4)
+    part(c, "Bell Tone", "Glass Bell", 0.6, dec=1.2, rel=0.8, cutoff=9000, env_amt=0.1, dly="1/4.",
+         dly_mix=0.2, rev=0.35)
+    part(c, "Dusk Arp", "Pulse Width", 0.5, dec=0.25, rel=0.2, cutoff=1600, env_amt=0.4, lfo_cut=0.18,
+         lfo_div="2bar", dly="1/8.", dly_mix=0.3, rev=0.25)
+    part(c, "Air Chords", "Chord Stack", 0.8, uni=5, det=0.3, atk=0.3, dec=2.0, sus=0.8, rel=1.2, filt=HP12,
+         cutoff=350, env_amt=0.0, chorus_on=True, rev=0.45, size=0.85, wide=0.4)
+    part(c, "Tape Chords", "Chord Stack", 0.45, uni=2, det=0.15, atk=0.01, dec=1.0, sus=0.6, rel=0.5,
+         cutoff=2000, env_amt=0.2, tape=0.35, flang=True, rev=0.3, lfo_pos=0.15)
+    part(c, "Smooth Lead", "Basic Shapes", TRI, dec=1.0, sus=0.8, rel=0.3, cutoff=3500, env_amt=0.1,
+         vibrato=0.04, dly="1/4.", dly_mix=0.25, rev=0.25, mono_glide=0.08)
+    part(c, "Detroit Strings", "Basic Shapes", SAW, uni=7, det=0.4, atk=0.25, dec=1.5, sus=0.85, rel=0.9,
+         cutoff=2500, env_amt=0.0, phaser_on=True, rev=0.35, size=0.75)
+
+
+def build_minimal():
+    c = "Minimal"
+    part(c, "Minimal Blip", "Sine", 0.0, dec=0.08, rel=0.05, cutoff=8000, env_amt=0.0, pitch=0.1, pdec=0.02,
+         dly="1/16", dly_mix=0.2, rev=0.0)
+    bassline(c, "Rubber Band Bass", "Basic Shapes", TRI * 0.5, cutoff=1500, env_amt=0.1, decay=0.15, sus=0.4,
+             pitch=0.05, sub_lvl=0.3, glide=0.1, legato=True)
+    bassline(c, "Click Bass", "Basic Shapes", SQUARE, cutoff=260, res=0.35, env_amt=0.5, decay=0.06, sus=0.0,
+             sub_lvl=0.5, drive=0.25)
+    part(c, "Tick Perc", "Sine", 0.0, b=dict(table="Sine", pos=0.0, level=0.0), dec=0.04, rel=0.03, filt=HP12,
+         cutoff=4000, env_amt=0.0, noise_lvl=0.6, noise_kind=0, rev=0.1, size=0.3, rev_mode=ROOM)
+    part(c, "Wood Block", "Sine", 0.0, dec=0.07, rel=0.05, cutoff=9000, env_amt=0.0,
+         warp=W_FM, warp_amt=0.3, b=dict(table="Sine", pos=0.0, octave=1, level=0.0), pitch=0.04, pdec=0.01,
+         rev=0.12, size=0.3, rev_mode=ROOM)
+    part(c, "Glass Ping", "Glass Bell", 0.5, dec=0.25, rel=0.2, cutoff=10000, env_amt=0.0, dly="1/16",
+         dly_mix=0.3, dly_fb=0.45, rev=0.2)
+    part(c, "Dub Tone", "Sine", 0.0, b=dict(table="Basic Shapes", pos=TRI, octave=-1, level=0.3), dec=0.5,
+         rel=0.4, cutoff=1200, env_amt=0.2, dly="1/4.", dly_mix=0.35, dly_fb=0.6, rev=0.3, size=0.8)
+    part(c, "Micro Pluck", "Basic Shapes", SAW, dec=0.09, rel=0.08, cutoff=700, env_amt=0.5, fdec=0.05,
+         filt=LP12, dly="1/16", dly_mix=0.2, rev=0.15)
+    p = part(c, "Step Bleeps", "Basic Shapes", SQUARE, dec=0.12, rel=0.08, cutoff=3000, env_amt=0.2,
+             dly="1/8.", dly_mix=0.25, rev=0.2)
+    lfo(p, 1, div="1/16", shape=SH_L, mode=FREE)
+    p.mod("Lfo1", "OscACoarse", 0.125, True)
+    part(c, "Metal Tick", "Metal FM", 0.4, dec=0.06, rel=0.05, cutoff=1500, env_amt=0.0, filt=HP12, key=0.0, rev=0.1,
+         size=0.3, rev_mode=ROOM)
+    part(c, "Resonant Zap", "Basic Shapes", SAW, dec=0.2, rel=0.1, cutoff=200, res=0.7, env_amt=0.65, fdec=0.08,
+         filt=LADDER, dly="1/8", dly_mix=0.2)
+    part(c, "Minimal Stab", "Chord Stack", 0.15, dec=0.12, rel=0.1, cutoff=1300, env_amt=0.4, fdec=0.08,
+         dly="1/8.", dly_mix=0.3, dly_fb=0.5, rev=0.2)
+    part(c, "Hollow Perc", "Hollow Lead", 0.5, dec=0.12, rel=0.1, cutoff=600, res=0.5, env_amt=0.3,
+         filt=COMBP, rev=0.15, size=0.4, rev_mode=ROOM)
+    part(c, "Comb Tom", "Basic Shapes", TRI, dec=0.25, rel=0.2, cutoff=180, res=0.6, env_amt=0.2,
+         filt=COMBP, pitch=0.06, pdec=0.08, rev=0.15, size=0.4, rev_mode=ROOM)
+    part(c, "Rim Synth", "Sine", 0.0, b=dict(table="Sine", pos=0.0, octave=2, level=0.5), dec=0.05, rel=0.04,
+         cutoff=6000, env_amt=0.0, noise_lvl=0.25, rev=0.12, size=0.35, rev_mode=PLATE)
+    bassline(c, "Deep Pulse Bass", "Pulse Width", 0.4, cutoff=700, env_amt=0.2, decay=0.2, sus=0.6,
+             lfo_cut=0.06, lfo_div="1bar")
+    bassline(c, "Minimal Acid Bass", "Basic Shapes", SAW, cutoff=300, res=0.55, env_amt=0.4, decay=0.12,
+             sus=0.5, filt=LADDER, glide=0.06, dly="1/8.", drive=0.3)
+    part(c, "Bit Blip", "Bit Grit", 0.3, dec=0.09, rel=0.06, cutoff=9000, env_amt=0.0, dly="1/16T",
+         dly_mix=0.2, rev=0.1)
+    part(c, "Vowel Pop", "Vowel Morph", 0.6, dec=0.15, rel=0.1, filt=VOWEL, cutoff=1200, res=0.5, env_amt=0.3,
+         vel_pos=0.4, dly="1/8", dly_mix=0.2, rev=0.15)
+    part(c, "Gated Chord", "Chord Stack", 0.35, uni=2, det=0.15, dec=1.0, sus=1.0, rel=0.1, cutoff=1800,
+         env_amt=0.0, gate="1/16", rev=0.2, dly="1/8.", dly_mix=0.15)
+    part(c, "Shaker Noise", "Sine", 0.0, b=dict(table="Sine", pos=0.0, level=0.0), dec=0.06, rel=0.05,
+         filt=HP24, cutoff=6000, env_amt=0.0, noise_lvl=0.7, noise_kind=0, rev=0.12, size=0.3, rev_mode=ROOM)
+    bassline(c, "Thump Bass", "Sine", 0.0, cutoff=3000, env_amt=0.0, decay=0.35, sus=0.3, pitch=0.12,
+             sub_lvl=0.0, drive=0.35)
+    part(c, "Ping Pong Drop", "Sine", 0.0, dec=0.15, rel=0.1, cutoff=6000, env_amt=0.0, pitch=-0.06, pdec=0.1,
+         dly="1/8.", dly_mix=0.4, dly_fb=0.55, rev=0.2)
+    part(c, "Phase Clicks", "Digital Steps", 0.6, dec=0.07, rel=0.05, cutoff=5000, env_amt=0.1,
+         phaser_on=True, dly="1/16", dly_mix=0.2)
+    p = part(c, "Tiny Arp", "Harmonic Sweep", 0.3, dec=0.1, rel=0.08, cutoff=2500, env_amt=0.3,
+             dly="1/8.", dly_mix=0.25, rev=0.15)
+    lfo(p, 1, div="1/16", shape=SH_L, mode=FREE)
+    p.mod("Lfo1", "OscAPos", 0.6)
+    p = part(c, "Echo Chord", "Chord Stack", 0.5, uni=2, det=0.15, dec=0.2, rel=0.2, cutoff=2500, env_amt=0.2,
+             dly="1/4.", dly_mix=0.4, dly_fb=0.65, rev=0.3, size=0.8,
+             fxf=dict(kind=F_BP12, cutoff=900, res=0.35, mix=0.8))
+    lfo(p, 2, div="4bar", shape=SINE_L)
+    p.mod("Lfo2", "FxFilCutoff", 0.25, True)
+
+
 def main():
     build_bass()
     build_leads()
@@ -980,6 +1262,8 @@ def main():
     build_pads()
     build_strings()
     build_synths()
+    build_deep_house()
+    build_minimal()
 
     valid = param_ids()
     gains = json.load(open(GAINS)) if os.path.exists(GAINS) else {}

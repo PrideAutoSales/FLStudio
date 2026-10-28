@@ -36,7 +36,8 @@ private:
     cs::ui::CruzLookAndFeel lookAndFeel;
     juce::TooltipWindow tooltips { this, 600 };
 
-    juce::TextButton tabs[4] { juce::TextButton ("OSC"), juce::TextButton ("MATRIX"), juce::TextButton ("FX"), juce::TextButton ("GLOBAL") };
+    // Same tab order as Serum, so the workflow feels familiar.
+    juce::TextButton tabs[4] { juce::TextButton ("OSC"), juce::TextButton ("FX"), juce::TextButton ("MATRIX"), juce::TextButton ("GLOBAL") };
     juce::TextButton presetButton, prevButton { "<" }, nextButton { ">" }, saveButton { "Save" };
     cs::ui::ModKnob masterKnob;
     cs::ui::ScopeView scope;

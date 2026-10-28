@@ -95,7 +95,7 @@ void CruzSynthEditor::resized()
     header.removeFromRight (2);
     prevButton.setBounds (header.removeFromRight (28));
 
-    keyboard.setBounds (r.removeFromBottom (66).reduced (8, 4));
+    keyboard.setBounds (r.removeFromBottom (56).reduced (8, 4));
     for (auto* c : std::initializer_list<juce::Component*> { &oscPage, &matrixPage, &fxPage, &globalPage })
         c->setBounds (r);
     if (tableEditor != nullptr)
@@ -105,7 +105,7 @@ void CruzSynthEditor::resized()
 void CruzSynthEditor::showPage (int index)
 {
     page = index;
-    juce::Component* pages[] = { &oscPage, &matrixPage, &fxPage, &globalPage };
+    juce::Component* pages[] = { &oscPage, &fxPage, &matrixPage, &globalPage };
     for (int i = 0; i < 4; ++i)
     {
         pages[i]->setVisible (i == index);

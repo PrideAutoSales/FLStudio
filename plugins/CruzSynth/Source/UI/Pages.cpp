@@ -52,10 +52,13 @@ OscPanel::OscPanel (CruzSynthProcessor& p, int o, std::function<void (int)> onEd
     warp->setTooltip ("Warp mode: bends, squeezes or cross-modulates the wave");
 
     auto knob = [&] (const char* pid, const char* label) { return &make<ModKnob> (proc, id::osc (o, pid), label); };
-    row1 = { knob ("octave", "Oct"), knob ("semi", "Semi"), knob ("fine", "Fine"), knob ("coarse", "Pitch"),
-             knob ("pos", "WT Pos"), knob ("warpAmt", "Warp") };
-    row2 = { knob ("unison", "Unison"), knob ("detune", "Detune"), knob ("blend", "Blend"), knob ("width", "Width"),
-             knob ("phase", "Phase"), knob ("rand", "Rand"), knob ("pan", "Pan"), knob ("level", "Level") };
+    pitch = { knob ("octave", "OCT"), knob ("semi", "SEM"), knob ("fine", "FIN"), knob ("coarse", "CRS") };
+    for (auto* k : pitch)
+        k->setCompact (true);
+    row1 = { knob ("unison", "Unison"), knob ("detune", "Detune"), knob ("blend", "Blend"),
+             knob ("phase", "Phase"), knob ("rand", "Rand") };
+    row2 = { knob ("pos", "WT Pos"), knob ("warpAmt", "Warp"), knob ("width", "Width"),
+             knob ("pan", "Pan"), knob ("level", "Level") };
     refreshTableName();
 }
 
@@ -81,16 +84,21 @@ void OscPanel::resized()
     header.removeFromRight (4);
     tableBox->setBounds (header);
 
-    r = r.reduced (8, 4);
-    auto v = r.removeFromTop (128);
+    r = r.reduced (8, 2);
+    auto pr = r.removeFromTop (22);
+    const int pw = pr.getWidth() / (int) pitch.size();
+    for (auto* k : pitch)
+        k->setBounds (pr.removeFromLeft (pw).reduced (2, 0));
+    r.removeFromTop (5);
+    auto v = r.removeFromTop (juce::jmax (90, r.getHeight() - 150));
     view->setBounds (v);
     warp->setBounds (v.getX() + 6, v.getY() + 6, 104, 20);
-    r.removeFromTop (4);
+    r.removeFromTop (2);
     const int rowH = r.getHeight() / 2;
     auto a = r.removeFromTop (rowH);
-    const int w1 = a.getWidth() / 6;
+    const int w1 = a.getWidth() / (int) row1.size();
     for (auto* k : row1) k->setBounds (a.removeFromLeft (w1));
-    const int w2 = r.getWidth() / 8;
+    const int w2 = r.getWidth() / (int) row2.size();
     for (auto* k : row2) k->setBounds (r.removeFromLeft (w2));
 }
 
@@ -110,10 +118,8 @@ void SubPanel::resized()
     auto r = getLocalBounds();
     placePower (*power, r);
     auto header = r.removeFromTop (kHeader).reduced (8, 3);
-    header.removeFromLeft (60);
     toFilter->setBounds (header.removeFromRight (40));
-    header.removeFromRight (6);
-    shape->setBounds (header);
+    shape->setBounds (r.removeFromTop (24).reduced (8, 0));
     layoutRow (r.reduced (6, 4), { octave, level, pan });
 }
 
@@ -132,10 +138,8 @@ void NoisePanel::resized()
     auto r = getLocalBounds();
     placePower (*power, r);
     auto header = r.removeFromTop (kHeader).reduced (8, 3);
-    header.removeFromLeft (60);
     toFilter->setBounds (header.removeFromRight (40));
-    header.removeFromRight (6);
-    type->setBounds (header);
+    type->setBounds (r.removeFromTop (24).reduced (8, 0));
     layoutRow (r.reduced (6, 4), { color, level, pan });
 }
 
@@ -246,28 +250,30 @@ void ModulatorPanel::resized()
     for (auto* c : chips)
         c->setBounds (chipRow.removeFromLeft (cw).reduced (2, 0));
     r.removeFromTop (6);
-    auto controls = r.removeFromBottom (84);
-    r.removeFromBottom (4);
+    // The graph takes the left side; the selected modulator's controls sit on the right.
+    auto controls = r.removeFromRight (r.getWidth() * 42 / 100);
+    r.removeFromRight (8);
     envView->setBounds (r);
     lfoView->setBounds (r);
 
     for (auto& set : envControls)
     {
-        auto c = controls;
-        const int w = c.getWidth() / (int) set.size();
-        for (auto* k : set) k->setBounds (c.removeFromLeft (w));
+        const int colW = controls.getWidth() / 3, rowH = controls.getHeight() / 2;
+        for (size_t i = 0; i < set.size(); ++i)
+            set[i]->setBounds (controls.getX() + (int) (i % 3) * colW, controls.getY() + (int) (i / 3) * rowH, colW, rowH);
     }
     for (auto& set : lfoControls)
     {
         auto c = controls;
-        auto col1 = c.removeFromLeft (110).reduced (4, 8);
-        set[0]->setBounds (col1.removeFromTop (col1.getHeight() / 2).reduced (0, 3));
-        set[1]->setBounds (col1.reduced (0, 3));
-        auto col2 = c.removeFromLeft (100).reduced (4, 8);
-        set[2]->setBounds (col2.removeFromTop (col2.getHeight() / 2).reduced (0, 3));
-        set[3]->setBounds (col2.reduced (0, 3));
-        const int w = c.getWidth() / 4;
+        auto row = c.removeFromTop (26);
+        set[0]->setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (3, 1));
+        set[1]->setBounds (row.reduced (3, 1));
+        row = c.removeFromTop (28).withTrimmedTop (4);
+        set[2]->setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (3, 1));
         // When synced the rate knob hides and the division menu (set[3]) is shown instead.
+        set[3]->setBounds (row.reduced (3, 1));
+        c.removeFromTop (4);
+        const int w = c.getWidth() / 4;
         set[4]->setBounds (c.removeFromLeft (w));
         set[5]->setBounds (c.removeFromLeft (w));
         set[6]->setBounds (c.removeFromLeft (w));
@@ -290,27 +296,70 @@ MacroPanel::MacroPanel (CruzSynthProcessor& p) : Panel ("MACROS")
 
 void MacroPanel::resized()
 {
+    // One row: four macros (knob with its drag chip beside it), then the other sources.
     auto r = getLocalBounds().reduced (8, 4);
-    r.removeFromTop (kHeader - 4);
-    auto grid = r.removeFromTop (196);
+    r.removeFromLeft (64);   // room for the title
+    auto others = r.removeFromRight (300);
+    const int cw = r.getWidth() / kNumMacros;
     for (int m = 0; m < kNumMacros; ++m)
     {
-        auto cell = juce::Rectangle<int> (grid.getX() + (m % 2) * grid.getWidth() / 2, grid.getY() + (m / 2) * 98,
-                                          grid.getWidth() / 2, 98);
-        macroChips[(size_t) m]->setBounds (cell.removeFromBottom (22).reduced (16, 1));
-        knobs[(size_t) m]->setBounds (cell.reduced (10, 0));
+        auto cell = r.removeFromLeft (cw).reduced (4, 0);
+        knobs[(size_t) m]->setBounds (cell.removeFromLeft (juce::jmin (84, cell.getWidth() / 2)));
+        macroChips[(size_t) m]->setBounds (cell.withSizeKeepingCentre (juce::jmin (60, cell.getWidth() - 4), 22));
     }
-    r.removeFromTop (6);
-    const int cw = r.getWidth() / 3;
+    others = others.withSizeKeepingCentre (others.getWidth(), 52);
+    const int ow = others.getWidth() / 3;
     for (size_t i = 0; i < otherChips.size(); ++i)
-        otherChips[i]->setBounds (r.getX() + (int) (i % 3) * cw + 2, r.getY() + (int) (i / 3) * 26, cw - 4, 22);
+        otherChips[i]->setBounds (others.getX() + (int) (i % 3) * ow + 2, others.getY() + (int) (i / 3) * 28, ow - 4, 22);
+}
+
+//==============================================================================
+VoicingPanel::VoicingPanel (CruzSynthProcessor& p) : Panel ("VOICING"), proc (p)
+{
+    toggles = { &make<ParamToggle> (p.apvts, "mono", "MONO"), &make<ParamToggle> (p.apvts, "legato", "LEGATO") };
+    static_cast<ParamToggle*> (toggles[1])->setTooltip ("Mono only: overlapping notes slide without restarting the envelopes");
+    knobs = { &make<ModKnob> (p, "poly", "Voices"), &make<ModKnob> (p, "glide", "Glide"),
+              &make<ModKnob> (p, "bend_range", "Bend"), &make<ModKnob> (p, "vel_sens", "Velocity") };
+    startTimerHz (8);
+}
+
+void VoicingPanel::timerCallback()
+{
+    const int v = proc.live.activeVoices.load();
+    if (v != lastVoices)
+    {
+        lastVoices = v;
+        repaint (getLocalBounds().removeFromTop (kHeader));
+    }
+}
+
+void VoicingPanel::paint (juce::Graphics& g)
+{
+    Panel::paint (g);
+    g.setColour (colours::textDim);
+    g.setFont (font (11.0f));
+    g.drawText (juce::String (proc.live.activeVoices.load()) + " playing", getLocalBounds().removeFromTop (kHeader).reduced (10, 0),
+                juce::Justification::centredRight);
+}
+
+void VoicingPanel::resized()
+{
+    auto r = getLocalBounds().reduced (8, 4);
+    r.removeFromTop (kHeader - 4);
+    auto row = r.removeFromTop (26);
+    for (auto* t : toggles)
+        t->setBounds (row.removeFromLeft (row.getWidth() / (t == toggles.front() ? 2 : 1)).reduced (3, 1));
+    r.removeFromTop (4);
+    const int cw = r.getWidth() / 2, ch = r.getHeight() / 2;
+    for (size_t i = 0; i < knobs.size(); ++i)
+        knobs[i]->setBounds (r.getX() + (int) (i % 2) * cw, r.getY() + (int) (i / 2) * ch, cw, ch);
 }
 
 //==============================================================================
 OscPage::OscPage (CruzSynthProcessor& p, std::function<void (int)> onEditTable)
-    : oscA (p, 0, onEditTable), oscB (p, 1, onEditTable), sub (p), noise (p), filter (p), mods (p), macros (p)
+    : oscA (p, 0, onEditTable), oscB (p, 1, onEditTable), sub (p), noise (p), filter (p), mods (p), voicing (p), macros (p)
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &oscA, &oscB, &sub, &noise, &filter, &mods, &macros })
+    for (auto* c : std::initializer_list<juce::Component*> { &oscA, &oscB, &sub, &noise, &filter, &mods, &voicing, &macros })
         addAndMakeVisible (c);
 }
 
@@ -322,22 +371,27 @@ void OscPage::refresh()
 
 void OscPage::resized()
 {
+    // Laid out the way Serum users expect: sub and noise on the left, the two
+    // oscillators, the filter on the right, modulators below, then macros.
     auto r = getLocalBounds().reduced (8);
-    auto top = r.removeFromTop (r.getHeight() * 53 / 100);
+    auto top = r.removeFromTop (r.getHeight() * 50 / 100);
     r.removeFromTop (8);
+    macros.setBounds (r.removeFromBottom (juce::jmin (100, r.getHeight() / 3)));
+    r.removeFromBottom (8);
 
-    const int oscW = (top.getWidth() - 16) * 37 / 100;
+    auto side = top.removeFromLeft (188);
+    sub.setBounds (side.removeFromTop ((side.getHeight() - 8) / 2));
+    side.removeFromTop (8);
+    noise.setBounds (side);
+    top.removeFromLeft (8);
+    const int oscW = (top.getWidth() - 16) * 35 / 100;
     oscA.setBounds (top.removeFromLeft (oscW));
     top.removeFromLeft (8);
     oscB.setBounds (top.removeFromLeft (oscW));
     top.removeFromLeft (8);
-    sub.setBounds (top.removeFromTop ((top.getHeight() - 8) / 2));
-    top.removeFromTop (8);
-    noise.setBounds (top);
+    filter.setBounds (top);
 
-    filter.setBounds (r.removeFromLeft (oscW - 60));
-    r.removeFromLeft (8);
-    macros.setBounds (r.removeFromRight (230));
+    voicing.setBounds (r.removeFromRight (230));
     r.removeFromRight (8);
     mods.setBounds (r);
 }
@@ -419,98 +473,318 @@ void MatrixPage::resized()
 }
 
 //==============================================================================
-class FxPage::FxPanel : public Panel
+// One module in the rack: name and power on the left, menus and switches in a
+// column, a row of knobs, and a live curve for the modules that have one.
+class FxPage::Strip : public Panel
 {
 public:
-    FxPanel (CruzSynthProcessor& p, int m, std::function<void (int, int)> move)
-        : Panel (fxModuleNames()[m].toUpperCase()), module (m)
+    Strip (CruzSynthProcessor& p, int m) : Panel ({}), module (m)
     {
-        static const char* onIds[] = { "fx_dist_on", "fx_cho_on", "fx_pha_on", "fx_dly_on", "fx_rev_on", "fx_cmp_on", "fx_eq_on" };
-        power = &make<PowerButton> (p.apvts, onIds[m]);
-        left = &make<juce::TextButton> ("<");
-        right = &make<juce::TextButton> (">");
-        left->setTooltip ("Move earlier in the chain");
-        right->setTooltip ("Move later in the chain");
-        left->onClick = [this, move] { move (module, -1); };
-        right->onClick = [this, move] { move (module, 1); };
-
-        auto knob = [&] (const char* pid, const char* label) { items.push_back (&make<ModKnob> (p, pid, label)); };
-        auto combo = [&] (const char* pid) { items.push_back (&make<ParamCombo> (p.apvts, pid)); };
-        auto toggle = [&] (const char* pid, const char* text) { items.push_back (&make<ParamToggle> (p.apvts, pid, text)); };
+        power = &make<PowerButton> (p.apvts, fxOnParamID (m));
+        auto knob = [&] (const char* pid, const char* label) { knobs.push_back (&make<ModKnob> (p, pid, label)); };
+        auto combo = [&] (const char* pid) { side.push_back (&make<ParamCombo> (p.apvts, pid)); };
+        auto toggle = [&] (const char* pid, const char* text) { side.push_back (&make<ParamToggle> (p.apvts, pid, text)); };
 
         switch (m)
         {
-            case FxDistortion: combo ("fx_dist_mode"); knob ("fx_dist_drive", "Drive"); knob ("fx_dist_tone", "Tone"); knob ("fx_dist_mix", "Mix"); break;
-            case FxChorus: knob ("fx_cho_rate", "Rate"); knob ("fx_cho_depth", "Depth"); knob ("fx_cho_delay", "Delay");
-                           knob ("fx_cho_feedback", "Feedback"); knob ("fx_cho_mix", "Mix"); break;
-            case FxPhaser: knob ("fx_pha_rate", "Rate"); knob ("fx_pha_depth", "Depth"); knob ("fx_pha_freq", "Freq");
-                           knob ("fx_pha_feedback", "Feedback"); knob ("fx_pha_mix", "Mix"); break;
-            case FxDelay: toggle ("fx_dly_sync", "SYNC"); combo ("fx_dly_div"); toggle ("fx_dly_pingpong", "PING-PONG");
-                          knob ("fx_dly_time", "Time"); knob ("fx_dly_feedback", "Feedback"); knob ("fx_dly_hicut", "Hi Cut");
-                          knob ("fx_dly_mix", "Mix"); break;
-            case FxReverb: knob ("fx_rev_size", "Size"); knob ("fx_rev_damp", "Damping"); knob ("fx_rev_width", "Width"); knob ("fx_rev_mix", "Mix"); break;
-            case FxCompressor: toggle ("fx_cmp_multi", "MULTIBAND"); knob ("fx_cmp_thresh", "Thresh"); knob ("fx_cmp_ratio", "Ratio");
-                               knob ("fx_cmp_attack", "Attack"); knob ("fx_cmp_release", "Release"); knob ("fx_cmp_upward", "Upward");
-                               knob ("fx_cmp_gain", "Gain"); knob ("fx_cmp_mix", "Mix"); break;
-            default: knob ("fx_eq_lowfreq", "Low Freq"); knob ("fx_eq_lowgain", "Low Gain");
-                     knob ("fx_eq_highfreq", "High Freq"); knob ("fx_eq_highgain", "High Gain"); break;
+            case FxHyper:
+                subtitle = "Unison for the whole sound, plus Widen";
+                knob ("fx_hyp_rate", "Rate"); knob ("fx_hyp_detune", "Detune"); knob ("fx_hyp_voices", "Voices");
+                knob ("fx_hyp_mix", "Mix"); knob ("fx_hyp_size", "Wide Size"); knob ("fx_hyp_wide", "Wide Mix");
+                break;
+            case FxDistortion:
+                combo ("fx_dist_mode"); combo ("fx_dist_fmode"); combo ("fx_dist_ftype");
+                static_cast<ParamCombo*> (side[1])->setTooltip ("Filter before (Pre) or after (Post) the distortion");
+                knob ("fx_dist_drive", "Drive"); knob ("fx_dist_tone", "Tone"); knob ("fx_dist_ffreq", "Freq");
+                knob ("fx_dist_fres", "Res"); knob ("fx_dist_mix", "Mix");
+                curve = &make<FxCurveView> (p, FxCurveView::Distortion);
+                break;
+            case FxFlanger:
+                toggle ("fx_fla_sync", "SYNC"); combo ("fx_fla_div");
+                knob ("fx_fla_rate", "Rate"); knob ("fx_fla_depth", "Depth"); knob ("fx_fla_feedback", "Feedback");
+                knob ("fx_fla_spread", "Stereo"); knob ("fx_fla_mix", "Mix");
+                break;
+            case FxPhaser:
+                combo ("fx_pha_stages");
+                static_cast<ParamCombo*> (side[0])->setTooltip ("Number of phaser stages: more stages, more notches");
+                knob ("fx_pha_rate", "Rate"); knob ("fx_pha_depth", "Depth"); knob ("fx_pha_freq", "Freq");
+                knob ("fx_pha_feedback", "Feedback"); knob ("fx_pha_spread", "Stereo"); knob ("fx_pha_mix", "Mix");
+                break;
+            case FxChorus:
+                knob ("fx_cho_rate", "Rate"); knob ("fx_cho_depth", "Depth"); knob ("fx_cho_delay", "Delay");
+                knob ("fx_cho_feedback", "Feedback"); knob ("fx_cho_hicut", "High Cut"); knob ("fx_cho_spread", "Stereo");
+                knob ("fx_cho_mix", "Mix");
+                break;
+            case FxDelay:
+                toggle ("fx_dly_sync", "SYNC"); combo ("fx_dly_div"); toggle ("fx_dly_pingpong", "PING-PONG");
+                knob ("fx_dly_time", "Time"); knob ("fx_dly_feedback", "Feedback"); knob ("fx_dly_offset", "Offset R");
+                knob ("fx_dly_lowcut", "Low Cut"); knob ("fx_dly_hicut", "High Cut"); knob ("fx_dly_mix", "Mix");
+                break;
+            case FxReverb:
+                combo ("fx_rev_mode");
+                knob ("fx_rev_size", "Size"); knob ("fx_rev_decay", "Decay"); knob ("fx_rev_predelay", "Pre-delay");
+                knob ("fx_rev_damp", "Damping"); knob ("fx_rev_lowcut", "Low Cut"); knob ("fx_rev_hicut", "High Cut");
+                knob ("fx_rev_width", "Width"); knob ("fx_rev_mix", "Mix");
+                break;
+            case FxCompressor:
+                toggle ("fx_cmp_multi", "MULTIBAND");
+                knob ("fx_cmp_thresh", "Thresh"); knob ("fx_cmp_ratio", "Ratio"); knob ("fx_cmp_attack", "Attack");
+                knob ("fx_cmp_release", "Release"); knob ("fx_cmp_upward", "Upward"); knob ("fx_cmp_gain", "Gain");
+                knob ("fx_cmp_mix", "Mix");
+                break;
+            case FxMultiband:
+                subtitle = "Three-band upward and downward squash";
+                knob ("fx_mb_depth", "Depth"); knob ("fx_mb_time", "Time"); knob ("fx_mb_down", "Down");
+                knob ("fx_mb_up", "Up"); knob ("fx_mb_low", "Low"); knob ("fx_mb_mid", "Mid"); knob ("fx_mb_high", "High");
+                knob ("fx_mb_gain", "Output");
+                break;
+            case FxEq:
+                combo ("fx_eq_lowtype"); combo ("fx_eq_hightype");
+                knob ("fx_eq_lowfreq", "Low Freq"); knob ("fx_eq_lowq", "Low Q"); knob ("fx_eq_lowgain", "Low Gain");
+                knob ("fx_eq_highfreq", "High Freq"); knob ("fx_eq_highq", "High Q"); knob ("fx_eq_highgain", "High Gain");
+                curve = &make<FxCurveView> (p, FxCurveView::Eq);
+                break;
+            case FxFilter:
+                combo ("fx_fil_type");
+                knob ("fx_fil_cutoff", "Cutoff"); knob ("fx_fil_res", "Res"); knob ("fx_fil_drive", "Drive");
+                knob ("fx_fil_stereo", "Stereo"); knob ("fx_fil_mix", "Mix");
+                curve = &make<FxCurveView> (p, FxCurveView::Filter);
+                break;
+            default: break;
         }
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        drawPanel (g, getLocalBounds(), {});
+        g.setColour (colours::text);
+        g.setFont (font (14.0f, true));
+        g.drawText (fxModuleNames()[module].toUpperCase(), 34, 8, 110, 20, juce::Justification::centredLeft);
+        if (subtitle.isNotEmpty())
+        {
+            g.setColour (colours::textDim);
+            g.setFont (font (11.0f));
+            g.drawFittedText (subtitle, 12, 34, 116, 40, juce::Justification::topLeft, 3);
+        }
+        g.setColour (colours::outline);
+        g.drawVerticalLine (136, 8.0f, (float) getHeight() - 8.0f);
     }
 
     void resized() override
     {
         auto r = getLocalBounds();
-        placePower (*power, r);
-        auto header = r.removeFromTop (kHeader).reduced (8, 4);
-        right->setBounds (header.removeFromRight (24));
-        header.removeFromRight (2);
-        left->setBounds (header.removeFromRight (24));
-        layoutGrid (r.reduced (6, 2), items, 3, juce::jmin (84, (r.getHeight() - 4) / 3));
+        power->setBounds (10, 9, 18, 18);
+        r.removeFromLeft (142);
+        if (curve != nullptr)
+            curve->setBounds (r.removeFromRight (220).reduced (8));
+        if (! side.empty())
+        {
+            auto col = r.removeFromLeft (124).reduced (4, 10);
+            for (auto* c : side)
+            {
+                c->setBounds (col.removeFromTop (24));
+                col.removeFromTop (6);
+            }
+        }
+        r = r.reduced (2, 6);
+        const int w = juce::jmin (78, r.getWidth() / juce::jmax (1, (int) knobs.size()));
+        for (auto* k : knobs)
+            k->setBounds (r.removeFromLeft (w));
     }
 
     const int module;
 
 private:
     PowerButton* power;
-    juce::TextButton* left;
-    juce::TextButton* right;
-    std::vector<juce::Component*> items;
+    FxCurveView* curve = nullptr;
+    std::vector<juce::Component*> side;
+    std::vector<ModKnob*> knobs;
+    juce::String subtitle;
 };
 
+//==============================================================================
+// A row in the chain list: power, name, and buttons to move it up or down.
+class FxPage::ChainRow : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    ChainRow (CruzSynthProcessor& p, int m, std::function<void (int, int)> move, std::function<void (int)> select)
+        : module (m), onSelect (std::move (select))
+    {
+        power = std::make_unique<PowerButton> (p.apvts, fxOnParamID (m));
+        power->setTooltip ("Switch " + fxModuleNames()[m] + " on or off");
+        up.setTooltip ("Move earlier in the chain");
+        down.setTooltip ("Move later in the chain");
+        up.onClick = [this, move] { move (module, -1); };
+        down.onClick = [this, move] { move (module, 1); };
+        for (auto* c : std::initializer_list<juce::Component*> { power.get(), &up, &down })
+            addAndMakeVisible (c);
+        setTooltip ("Click to jump to " + fxModuleNames()[m] + " (switches it on if it's off)");
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        auto r = getLocalBounds().toFloat().reduced (1.0f);
+        const bool on = power->getToggleState();
+        g.setColour (on ? colours::panelHi : colours::panel);
+        g.fillRoundedRectangle (r, 4.0f);
+        if (on)
+        {
+            g.setColour (colours::accent);
+            g.fillRoundedRectangle (r.removeFromLeft (3.0f), 1.5f);
+        }
+        g.setColour (on ? colours::text : colours::textDim);
+        g.setFont (font (12.5f, on));
+        g.drawText (fxModuleNames()[module], 34, 0, getWidth() - 90, getHeight(), juce::Justification::centredLeft);
+    }
+
+    void resized() override
+    {
+        power->setBounds (10, (getHeight() - 18) / 2, 18, 18);
+        auto r = getLocalBounds().reduced (4, 4);
+        down.setBounds (r.removeFromRight (22));
+        r.removeFromRight (2);
+        up.setBounds (r.removeFromRight (22));
+    }
+
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (e.mouseWasClicked())
+            onSelect (module);
+    }
+
+    const int module;
+    std::unique_ptr<PowerButton> power;
+
+private:
+    juce::TextButton up { juce::String::charToString (0x25b2) }, down { juce::String::charToString (0x25bc) };
+    std::function<void (int)> onSelect;
+};
+
+//==============================================================================
 FxPage::FxPage (CruzSynthProcessor& p) : proc (p)
 {
     for (int m = 0; m < kNumFx; ++m)
     {
-        panels.push_back (std::make_unique<FxPanel> (proc, m, [this] (int module, int dir)
-        {
-            auto order = proc.getFxOrder();
-            const auto it = std::find (order.begin(), order.end(), module);
-            const int i = (int) std::distance (order.begin(), it);
-            const int j = i + dir;
-            if (j < 0 || j >= kNumFx)
-                return;
-            std::swap (order[(size_t) i], order[(size_t) j]);
-            proc.setFxOrder (order);
-            resized();
-        }));
-        addAndMakeVisible (*panels.back());
+        rows.push_back (std::make_unique<ChainRow> (proc, m, [this] (int mod, int dir) { move (mod, dir); },
+                                                    [this] (int mod) { show (mod); }));
+        addAndMakeVisible (*rows.back());
+        strips.push_back (std::make_unique<Strip> (proc, m));
+        rack.addChildComponent (*strips.back());
     }
+    viewport.setViewedComponent (&rack, false);
+    viewport.setScrollBarsShown (true, false);
+    viewport.setScrollBarThickness (8);
+    addAndMakeVisible (viewport);
+    startTimerHz (10);
 }
 
 FxPage::~FxPage() = default;
 
+juce::uint32 FxPage::onMask() const
+{
+    juce::uint32 mask = 0;
+    for (int m = 0; m < kNumFx; ++m)
+        if (proc.apvts.getRawParameterValue (fxOnParamID (m))->load() > 0.5f)
+            mask |= 1u << m;
+    return mask;
+}
+
+void FxPage::timerCallback()
+{
+    const auto mask = onMask();
+    if (mask != lastMask)
+    {
+        lastMask = mask;
+        layoutRack();
+        for (auto& r : rows)
+            r->repaint();
+    }
+}
+
+void FxPage::refresh()
+{
+    resized();
+    repaint();
+}
+
+void FxPage::move (int module, int dir)
+{
+    auto order = proc.getFxOrder();
+    const auto it = std::find (order.begin(), order.end(), module);
+    const int i = (int) std::distance (order.begin(), it);
+    const int j = i + dir;
+    if (j < 0 || j >= kNumFx)
+        return;
+    std::swap (order[(size_t) i], order[(size_t) j]);
+    proc.setFxOrder (order);
+    focus = module;
+    resized();
+}
+
+void FxPage::show (int module)
+{
+    auto* on = proc.apvts.getParameter (fxOnParamID (module));
+    if (on->getValue() < 0.5f)
+        on->setValueNotifyingHost (1.0f);
+    focus = module;
+    timerCallback();
+    layoutRack();
+}
+
+void FxPage::paint (juce::Graphics& g)
+{
+    drawPanel (g, listArea, "FX CHAIN");
+    g.setColour (colours::textDim);
+    g.setFont (font (11.0f));
+    g.drawFittedText ("Top to bottom is the order the sound goes through. Click a name to jump to it.",
+                      listArea.reduced (12, 10).removeFromBottom (44), juce::Justification::bottomLeft, 3);
+    if (lastMask == 0)
+    {
+        g.setFont (font (15.0f));
+        g.drawText ("Switch on an effect in the chain on the left to add it to the rack.", rackArea,
+                    juce::Justification::centred);
+    }
+}
+
 void FxPage::resized()
 {
     auto r = getLocalBounds().reduced (8);
+    listArea = r.removeFromLeft (210);
+    r.removeFromLeft (8);
+    rackArea = r;
+    viewport.setBounds (r);
+
+    auto list = listArea.reduced (8, 0).withTrimmedTop (32);
     const auto order = proc.getFxOrder();
-    const int cols = 4;
-    const int w = (r.getWidth() - (cols - 1) * 8) / cols;
-    const int h = (r.getHeight() - 8) / 2;
-    for (int i = 0; i < kNumFx; ++i)
+    for (auto m : order)
+        rows[(size_t) m]->setBounds (list.removeFromTop (34).reduced (0, 2));
+    layoutRack();
+}
+
+void FxPage::layoutRack()
+{
+    const auto order = proc.getFxOrder();
+    const int w = viewport.getWidth() - viewport.getScrollBarThickness() - 4;
+    const int h = 128;
+    int y = 0;
+    juce::Component* target = nullptr;
+    for (auto m : order)
     {
-        auto& panel = *panels[(size_t) order[(size_t) i]];
-        panel.setBounds (r.getX() + (i % cols) * (w + 8), r.getY() + (i / cols) * (h + 8), w, h);
+        auto& s = *strips[(size_t) m];
+        const bool on = proc.apvts.getRawParameterValue (fxOnParamID (m))->load() > 0.5f;
+        s.setVisible (on);
+        if (! on)
+            continue;
+        s.setBounds (0, y, w, h);
+        if (m == focus)
+            target = &s;
+        y += h + 8;
     }
+    rack.setSize (juce::jmax (1, w), juce::jmax (1, y - 8));
+    if (target != nullptr)
+        viewport.setViewPosition (0, juce::jlimit (0, juce::jmax (0, rack.getHeight() - viewport.getHeight()), target->getY()));
+    focus = -1;
+    repaint();
 }
 
 //==============================================================================
@@ -547,7 +821,8 @@ void GlobalPage::paint (juce::Graphics& g)
         "LFOs  Click inside the LFO display to draw your own shape: click to add a point, drag to move it, double-click to "
         "delete it, Option-drag a line to curve it, Shift snaps to the grid.\n\n"
         "ENV 1 always shapes the volume. ENV 2 and ENV 3 are free to use anywhere.\n\n"
-        "FX  Turn effects on with their round buttons and change the order with the arrows.\n\n"
+        "FX  The chain on the left lists all eleven effects. Switch one on with its round button and it appears in the "
+        "rack; the arrows change the order. Effect knobs take modulation too: drag a macro or LFO onto them.\n\n"
         "PRESETS  Pick one from the menu at the top, or save your own with Save.";
 
     g.setColour (colours::text);

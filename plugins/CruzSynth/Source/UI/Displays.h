@@ -99,6 +99,25 @@ private:
 };
 
 //==============================================================================
+// Live curves for the effects rack: the distortion's shaper, the EQ and the FX filter.
+class FxCurveView : public juce::Component, private juce::Timer
+{
+public:
+    enum Kind { Distortion, Eq, Filter };
+    FxCurveView (CruzSynthProcessor& p, Kind k);
+    void paint (juce::Graphics&) override;
+
+private:
+    void timerCallback() override;
+    float value (const char* paramID) const;   // includes modulation
+    void paintDistortion (juce::Graphics&, juce::Rectangle<float>);
+    void paintResponse (juce::Graphics&, juce::Rectangle<float>);
+    CruzSynthProcessor& proc;
+    Kind kind;
+    float lastHash = 0.0f;
+};
+
+//==============================================================================
 class ScopeView : public juce::Component, private juce::Timer
 {
 public:

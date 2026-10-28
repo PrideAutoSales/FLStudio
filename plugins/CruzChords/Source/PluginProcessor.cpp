@@ -366,6 +366,7 @@ void CruzChordsAudioProcessor::shuffle()
 {
     ShuffleOptions o;
     o.scale = m.scale;
+    o.feel = m.feel;
     o.adventure = m.adventure;
     o.totalBeats = 4.0 * juce::jlimit (1, 32, m.shuffleBars);
     o.chordBeats = m.chordEvery;
@@ -697,6 +698,7 @@ juce::ValueTree CruzChordsAudioProcessor::modelToTree() const
     t.setProperty ("followHost", m.followHost, nullptr);
     t.setProperty ("octave", m.octave, nullptr);
     t.setProperty ("invert", m.invert, nullptr);
+    t.setProperty ("feel", m.feel, nullptr);
     t.setProperty ("adventure", m.adventure, nullptr);
     t.setProperty ("shuffleBars", m.shuffleBars, nullptr);
     t.setProperty ("chordEvery", m.chordEvery, nullptr);
@@ -790,6 +792,7 @@ void CruzChordsAudioProcessor::applyState (const juce::ValueTree& tree)
         m.followHost = (bool) t.getProperty ("followHost", m.followHost);
         m.octave = juce::jlimit (-3, 3, (int) t.getProperty ("octave", 0));
         m.invert = juce::jlimit (-4, 4, (int) t.getProperty ("invert", 0));
+        m.feel = juce::jlimit (0, (int) cruzchords::numFeels - 1, (int) t.getProperty ("feel", m.feel));
         m.adventure = juce::jlimit (0.0f, 1.0f, (float) t.getProperty ("adventure", m.adventure));
         m.shuffleBars = juce::jlimit (1, 32, (int) t.getProperty ("shuffleBars", m.shuffleBars));
         m.chordEvery = juce::jlimit (1.0, 8.0, (double) t.getProperty ("chordEvery", m.chordEvery));

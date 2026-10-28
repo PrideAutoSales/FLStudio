@@ -675,10 +675,11 @@ CruzChordsAudioProcessorEditor::CruzChordsAudioProcessorEditor (CruzChordsAudioP
     setupLabel (barsLabel, "Length");
     setupLabel (everyLabel, "Chord every");
     setupLabel (allLabel, "Whole progression:");
+    setupLabel (feelLabel, "Feel");
     setupLabel (allOctLabel, "Octave");
     setupLabel (allInvLabel, "Invert");
     traditionalLabel.setJustificationType (juce::Justification::centredRight);
-    for (auto* l : { &traditionalLabel, &adventurousLabel, &barsLabel, &everyLabel, &allLabel, &allOctLabel, &allInvLabel })
+    for (auto* l : { &feelLabel, &traditionalLabel, &adventurousLabel, &barsLabel, &everyLabel, &allLabel, &allOctLabel, &allInvLabel })
         addAndMakeVisible (*l);
     for (auto* l : { &allOctValue, &allInvValue })
     {
@@ -696,6 +697,16 @@ CruzChordsAudioProcessorEditor::CruzChordsAudioProcessorEditor (CruzChordsAudioP
         processor.modelChanged();
     };
     addAndMakeVisible (adventureSlider);
+
+    for (int f = 0; f < cruzchords::numFeels; ++f)
+        feelBox.addItem (cruzchords::feelName (f), f + 1);
+    feelBox.setTooltip ("The mood Shuffle writes in. It picks the progressions and the chord colours. Always in your key.");
+    feelBox.onChange = [this]
+    {
+        model.feel = juce::jlimit (0, cruzchords::numFeels - 1, feelBox.getSelectedId() - 1);
+        processor.modelChanged();
+    };
+    addAndMakeVisible (feelBox);
 
     for (int bars : barChoices)
         barsBox.addItem (juce::String (bars) + (bars == 1 ? " bar" : " bars"), bars);
@@ -831,7 +842,7 @@ CruzChordsAudioProcessorEditor::CruzChordsAudioProcessorEditor (CruzChordsAudioP
     processor.addChangeListener (this);
     startTimerHz (30);
 
-    setSize (1100, 700);
+    setSize (1180, 700);
 }
 
 CruzChordsAudioProcessorEditor::~CruzChordsAudioProcessorEditor()
@@ -1047,6 +1058,7 @@ void CruzChordsAudioProcessorEditor::syncFromModel()
     keysToggle.setToggleState (model.keysPlayChords, juce::dontSendNotification);
     followToggle.setToggleState (model.followHost, juce::dontSendNotification);
     adventureSlider.setValue (model.adventure, juce::dontSendNotification);
+    feelBox.setSelectedId (model.feel + 1, juce::dontSendNotification);
     barsBox.setSelectedId (model.shuffleBars, juce::dontSendNotification);
     if (barsBox.getSelectedId() == 0)
         barsBox.setText (juce::String (model.shuffleBars) + " bars", juce::dontSendNotification);
@@ -1128,15 +1140,15 @@ void CruzChordsAudioProcessorEditor::paint (juce::Graphics& g)
     };
     section (padsTitle, "Chords in your key");
     section (stripTitle, "Your progression");
-    section (feelTitle, "Feel");
+    section (soundTitle, "Rhythm and sound");
 
     g.setColour (Colours::dim);
     g.setFont (font (12.0f));
     g.drawText ("Click a chord to hear it. With a chord selected below, clicking a pad swaps it in.",
                 padsTitle.withTrimmedLeft (170), juce::Justification::centredLeft);
-    g.drawText ("Click a chord to hear and edit it. Click its padlock to keep it when you shuffle."
-                    + (stripInfo.isNotEmpty() ? "   (" + stripInfo + ")" : juce::String()),
-                stripTitle.withTrimmedLeft (150), juce::Justification::centredLeft);
+    g.drawFittedText ("Click a chord to edit it. Its padlock keeps it when you shuffle.",
+                      stripHelpArea, juce::Justification::centredLeft, 1, 0.9f);
+    g.drawText (stripInfo, stripInfoArea, juce::Justification::centredRight);
 }
 
 void CruzChordsAudioProcessorEditor::resized()
@@ -1205,14 +1217,31 @@ void CruzChordsAudioProcessorEditor::resized()
         moveRight.setBounds (r.removeFromRight (96).reduced (0, 1));
         r.removeFromRight (6);
         moveLeft.setBounds (r.removeFromRight (96).reduced (0, 1));
+        r.removeFromRight (18);
+
+        allInvUp.setBounds (r.removeFromRight (26).reduced (0, 1));
+        allInvValue.setBounds (r.removeFromRight (30));
+        allInvDown.setBounds (r.removeFromRight (26).reduced (0, 1));
+        allInvLabel.setBounds (r.removeFromRight (44));
+        r.removeFromRight (8);
+        allOctUp.setBounds (r.removeFromRight (26).reduced (0, 1));
+        allOctValue.setBounds (r.removeFromRight (30));
+        allOctDown.setBounds (r.removeFromRight (26).reduced (0, 1));
+        allOctLabel.setBounds (r.removeFromRight (50));
+        allLabel.setBounds (r.removeFromRight (128));
+        allLabel.setJustificationType (juce::Justification::centredRight);
+        stripHelpArea = r.withTrimmedLeft (150);
     }
     area.removeFromTop (4);
     {
         auto row = area.removeFromTop (30);
         shuffleButton.setBounds (row.removeFromLeft (110));
-        row.removeFromLeft (10);
+        row.removeFromLeft (12);
+        feelLabel.setBounds (row.removeFromLeft (36));
+        feelBox.setBounds (row.removeFromLeft (120));
+        row.removeFromLeft (12);
         traditionalLabel.setBounds (row.removeFromLeft (76));
-        adventureSlider.setBounds (row.removeFromLeft (170));
+        adventureSlider.setBounds (row.removeFromLeft (150));
         adventurousLabel.setBounds (row.removeFromLeft (90));
         row.removeFromLeft (10);
         barsLabel.setBounds (row.removeFromLeft (48));
@@ -1220,18 +1249,7 @@ void CruzChordsAudioProcessorEditor::resized()
         row.removeFromLeft (10);
         everyLabel.setBounds (row.removeFromLeft (80));
         everyBox.setBounds (row.removeFromLeft (90));
-
-        allInvUp.setBounds (row.removeFromRight (26));
-        allInvValue.setBounds (row.removeFromRight (30));
-        allInvDown.setBounds (row.removeFromRight (26));
-        allInvLabel.setBounds (row.removeFromRight (44));
-        row.removeFromRight (8);
-        allOctUp.setBounds (row.removeFromRight (26));
-        allOctValue.setBounds (row.removeFromRight (30));
-        allOctDown.setBounds (row.removeFromRight (26));
-        allOctLabel.setBounds (row.removeFromRight (50));
-        allLabel.setBounds (row.withTrimmedLeft (6));
-        allLabel.setJustificationType (juce::Justification::centredRight);
+        stripInfoArea = row.withTrimmedLeft (12);
     }
     area.removeFromTop (6);
     strip.setBounds (area.removeFromTop (140));
@@ -1266,7 +1284,7 @@ void CruzChordsAudioProcessorEditor::resized()
         lockButton.setBounds (row.removeFromRight (62));
     }
     area.removeFromTop (8);
-    feelTitle = area.removeFromTop (26);
+    soundTitle = area.removeFromTop (26);
     {
         auto row = area.removeFromTop (30);
         rhythmLabel.setBounds (row.removeFromLeft (54));

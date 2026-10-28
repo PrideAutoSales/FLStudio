@@ -34,8 +34,8 @@ If Cruz Chords does not show up, check that the plugin manager's search paths in
 1. Pick a **Key** and **Scale** at the top. The seven pads under them are the chords that fit that key. Click one to hear it.
 2. Pick a **Genre** and a **Progression**, or press **Surprise me**. Press **Play** to hear it loop.
 3. Build your own: press **+ Add** on any pad. Click a chord in **Your progression** to change its root, type, length, inversion or octave. With a chord selected, clicking a pad swaps it in.
-4. **Shuffle** writes a new progression in your key. Slide **Traditional ↔ Adventurous** to choose between familiar moves with plain chords and unexpected moves with richer chords. **Length** sets 1 to 32 bars and **Chord every** sets how often the chord changes.
-5. Click the **padlock** on a chord (or select it and press **Lock**) to keep it when you shuffle.
+4. **Shuffle** writes a new progression in your key, built from progressions that are known to work and arranged like a song: a main phrase, the same phrase with a new ending, a contrasting phrase, and an ending that leads back to the start. Pick a **Feel** (Uplifting, Emotional, Dark, Dreamy, Soulful, Chill, Epic or Tense) to choose the kind of progressions and chord colours it uses. Slide **Traditional ↔ Adventurous** to choose between the most familiar progressions with exact repeats and rarer ones with richer chords and swaps. **Length** sets 1 to 32 bars and **Chord every** sets how often the chord changes.
+5. Click the **padlock** on a chord (or select it and press **Lock**) to keep it when you shuffle. The chords around it are chosen to lead into it and away from it.
 6. **Whole progression: Octave and Invert** move every chord up or down at once.
 7. **Feel** changes the rhythm (house stabs, deep house groove, pumping, arpeggios and more) and how the chords are spread out.
 

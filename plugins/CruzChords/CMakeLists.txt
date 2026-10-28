@@ -8,7 +8,7 @@ juce_add_plugin(CruzChords
     PLUGIN_MANUFACTURER_CODE Cruz
     PLUGIN_CODE Crch
     PRODUCT_NAME "Cruz Chords"
-    VERSION 0.2.0
+    VERSION 0.3.0
     FORMATS VST3 AU
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE

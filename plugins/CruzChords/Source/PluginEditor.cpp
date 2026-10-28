@@ -33,7 +33,8 @@ juce::String lengthText (double beats)
     return juce::String (bars, same (bars, std::floor (bars)) ? 0 : 1) + (same (bars, 1.0) ? " bar" : " bars");
 }
 
-const double lengthChoices[] = { 1, 2, 3, 4, 6, 8, 12, 16 };
+const double lengthChoices[] = { 1, 2, 3, 4, 6, 8, 12, 16, 32 };
+const int barChoices[] = { 1, 2, 4, 8, 12, 16, 24, 32 };
 
 void setupLabel (juce::Label& l, const juce::String& text)
 {
@@ -173,79 +174,155 @@ void ChordPad::mouseExit (const juce::MouseEvent&)
 //==============================================================================
 ProgressionStrip::ProgressionStrip (CruzChordsAudioProcessor& p) : processor (p) {}
 
-std::vector<juce::Rectangle<float>> ProgressionStrip::slotRects() const
+std::vector<ProgressionStrip::Segment> ProgressionStrip::segments() const
 {
     const auto& chords = processor.model().chords;
-    std::vector<juce::Rectangle<float>> rects;
+    std::vector<Segment> out;
     double total = 0;
     for (const auto& c : chords)
         total += c.beats;
     if (total <= 0)
-        return rects;
+        return out;
 
-    auto area = getLocalBounds().toFloat();
-    float x = area.getX();
-    for (const auto& c : chords)
+    // Up to 8 bars on one row; longer progressions wrap onto more rows of 8 bars.
+    const double perRow = total <= 32.0 ? total : 32.0;
+    const int rows = (int) std::ceil (total / perRow - 1.0e-9);
+    const auto area = getLocalBounds().toFloat();
+    const float rowH = area.getHeight() / (float) rows;
+    const float beatW = area.getWidth() / (float) perRow;
+
+    double t = 0;
+    for (size_t i = 0; i < chords.size(); ++i)
     {
-        const float w = (float) (c.beats / total) * area.getWidth();
-        rects.push_back ({ x, area.getY(), w, area.getHeight() });
-        x += w;
+        double start = t, end = t + chords[i].beats;
+        while (start < end - 1.0e-9)
+        {
+            const int row = (int) std::floor (start / perRow + 1.0e-9);
+            const double rowEnd = (row + 1) * perRow;
+            const double segEnd = std::min (end, rowEnd);
+            const float x = area.getX() + (float) (start - row * perRow) * beatW;
+            out.push_back ({ (int) i, { x, area.getY() + row * rowH, (float) (segEnd - start) * beatW, rowH },
+                             same (start, t) });
+            start = segEnd;
+        }
+        t = end;
     }
-    return rects;
+    return out;
+}
+
+static juce::Rectangle<float> lockArea (juce::Rectangle<float> slot)
+{
+    return { slot.getRight() - 24.0f, slot.getY() + 4.0f, 20.0f, 20.0f };
+}
+
+static void drawLock (juce::Graphics& g, juce::Rectangle<float> r, bool locked, juce::Colour c)
+{
+    auto body = r.reduced (4.0f).withTrimmedTop (r.getHeight() * 0.42f);
+    juce::Path shackle;
+    const float w = body.getWidth() * 0.6f;
+    const float x = body.getCentreX() - w * 0.5f;
+    shackle.startNewSubPath (x, body.getY());
+    shackle.lineTo (x, body.getY() - 3.0f);
+    shackle.addCentredArc (body.getCentreX(), body.getY() - 3.0f, w * 0.5f, w * 0.5f, 0.0f,
+                           -juce::MathConstants<float>::halfPi, juce::MathConstants<float>::halfPi);
+    if (locked)
+        shackle.lineTo (x + w, body.getY());
+    g.setColour (c);
+    g.strokePath (shackle, juce::PathStrokeType (1.6f));
+    if (locked)
+        g.fillRoundedRectangle (body, 1.5f);
+    else
+        g.drawRoundedRectangle (body, 1.5f, 1.2f);
 }
 
 void ProgressionStrip::paint (juce::Graphics& g)
 {
     const auto& m = processor.model();
-    const auto rects = slotRects();
+    const auto segs = segments();
 
-    if (rects.empty())
+    if (segs.empty())
     {
         auto r = getLocalBounds().toFloat().reduced (2.0f);
         g.setColour (Colours::edge);
         g.drawRoundedRectangle (r, 10.0f, 1.5f);
         g.setColour (Colours::dim);
         g.setFont (font (15.0f));
-        g.drawFittedText ("Empty. Pick a progression above, or press + Add on any chord.", r.toNearestInt(),
+        g.drawFittedText ("Empty. Press Shuffle, pick a progression above, or press + Add on any chord.", r.toNearestInt(),
                           juce::Justification::centred, 2);
         return;
     }
 
     const bool flats = processor.useFlats();
-    for (size_t i = 0; i < rects.size(); ++i)
+    for (const auto& seg : segs)
     {
-        auto r = rects[i].reduced (3.0f);
-        const auto& c = m.chords[i];
-        const bool isPlaying = (int) i == playing;
-        const bool isSelected = (int) i == selected;
-        const bool isHeld = (int) i == held;
+        const int i = seg.slot;
+        auto r = seg.bounds.reduced (2.5f);
+        const auto& c = m.chords[(size_t) i];
+        const bool isPlaying = i == playing;
+        const bool isSelected = i == selected;
+        const bool isHeld = i == held;
 
         g.setColour (isHeld ? Colours::accent : (isPlaying ? Colours::accent2.withAlpha (0.35f) : Colours::raised));
-        g.fillRoundedRectangle (r, 10.0f);
-        g.setColour (isSelected ? Colours::accent : Colours::edge);
-        g.drawRoundedRectangle (r, 10.0f, isSelected ? 2.5f : 1.0f);
+        g.fillRoundedRectangle (r, 8.0f);
+        g.setColour (isSelected ? Colours::accent : (c.locked ? Colours::accent2.withAlpha (0.7f) : Colours::edge));
+        g.drawRoundedRectangle (r, 8.0f, isSelected ? 2.5f : 1.0f);
 
-        auto inner = r.reduced (6.0f, 8.0f);
+        if (! seg.first)
+            continue; // the rest of a chord that wraps onto the next row
+
         const auto ink = isHeld ? Colours::bg : Colours::text;
+        const auto dimInk = isHeld ? Colours::bg.withAlpha (0.8f) : Colours::dim;
+        const bool compact = r.getHeight() < 70.0f;
+        const bool showLock = r.getWidth() >= 34.0f && (c.locked || ! compact);
+        if (showLock)
+            drawLock (g, lockArea (r), c.locked, c.locked ? Colours::accent2 : dimInk.withAlpha (0.6f));
+
+        auto inner = r.reduced (5.0f, 4.0f);
+        if (compact && showLock)
+            inner.removeFromRight (16.0f);
         g.setColour (ink);
-        g.setFont (font (r.getWidth() < 70 ? 15.0f : 21.0f, true));
-        g.drawFittedText (chordName (c, m.key, flats), inner.removeFromTop (inner.getHeight() * 0.45f).toNearestInt(),
-                          juce::Justification::centredBottom, 1);
-        g.setColour (isHeld ? Colours::bg.withAlpha (0.8f) : Colours::dim);
-        g.setFont (font (13.0f));
-        g.drawFittedText (juce::String::fromUTF8 (romanNumeral (c).c_str()), inner.removeFromTop (20).toNearestInt(),
-                          juce::Justification::centred, 1);
-        g.drawFittedText (lengthText (c.beats), inner.toNearestInt(), juce::Justification::centredTop, 1);
+        if (r.getHeight() >= 70.0f)
+        {
+            inner.removeFromTop (6.0f);
+            g.setFont (font (r.getWidth() < 70 ? 15.0f : 21.0f, true));
+            g.drawFittedText (chordName (c, m.key, flats), inner.removeFromTop (inner.getHeight() * 0.45f).toNearestInt(),
+                              juce::Justification::centredBottom, 1);
+            g.setColour (dimInk);
+            g.setFont (font (13.0f));
+            g.drawFittedText (juce::String::fromUTF8 (romanNumeral (c).c_str()), inner.removeFromTop (20).toNearestInt(),
+                              juce::Justification::centred, 1);
+            g.drawFittedText (lengthText (c.beats), inner.toNearestInt(), juce::Justification::centredTop, 1);
+        }
+        else
+        {
+            // Compact rows for long progressions.
+            g.setFont (font (r.getWidth() < 60 ? 12.0f : 15.0f, true));
+            g.drawFittedText (chordName (c, m.key, flats), inner.removeFromTop (inner.getHeight() * 0.6f).toNearestInt(),
+                              juce::Justification::centredBottom, 1);
+            g.setColour (dimInk);
+            g.setFont (font (11.0f));
+            g.drawFittedText (juce::String::fromUTF8 (romanNumeral (c).c_str()), inner.toNearestInt(), juce::Justification::centredTop, 1);
+        }
     }
 }
 
 void ProgressionStrip::mouseDown (const juce::MouseEvent& e)
 {
-    const auto rects = slotRects();
     int hit = -1;
-    for (size_t i = 0; i < rects.size(); ++i)
-        if (rects[i].contains (e.position))
-            hit = (int) i;
+    bool onLock = false;
+    for (const auto& seg : segments())
+        if (seg.bounds.contains (e.position))
+        {
+            hit = seg.slot;
+            onLock = seg.first && seg.bounds.getWidth() >= 34.0f && lockArea (seg.bounds.reduced (2.5f)).expanded (3.0f).contains (e.position);
+        }
+
+    if (hit >= 0 && onLock)
+    {
+        if (onToggleLock)
+            onToggleLock (hit);
+        return;
+    }
 
     if (onSelect)
         onSelect (hit);
@@ -443,7 +520,7 @@ CruzChordsAudioProcessorEditor::CruzChordsAudioProcessorEditor (CruzChordsAudioP
         {
             if ((int) model.chords.size() >= Sequence::maxSlots)
             {
-                statusLabel.setText ("The progression is full (16 chords).", juce::dontSendNotification);
+                statusLabel.setText ("The progression is full (64 chords).", juce::dontSendNotification);
                 return;
             }
             auto c = processor.padChord (d);
@@ -573,6 +650,85 @@ CruzChordsAudioProcessorEditor::CruzChordsAudioProcessorEditor (CruzChordsAudioP
         processor.modelChanged();
     };
 
+    // Lock the selected chord so Shuffle keeps it.
+    addAndMakeVisible (lockButton);
+    lockButton.onClick = [this] { editSelected ([] (Chord& c) { c.locked = ! c.locked; }); };
+    strip.onToggleLock = [this] (int i)
+    {
+        if (i >= 0 && i < (int) model.chords.size())
+        {
+            model.chords[(size_t) i].locked = ! model.chords[(size_t) i].locked;
+            processor.modelChanged();
+        }
+    };
+
+    // Shuffle
+    shuffleButton.setToggleState (true, juce::dontSendNotification); // drawn in the accent colour
+    shuffleButton.onClick = [this]
+    {
+        selectedSlot = -1;
+        processor.shuffle();
+    };
+    addAndMakeVisible (shuffleButton);
+    setupLabel (traditionalLabel, "Traditional");
+    setupLabel (adventurousLabel, "Adventurous");
+    setupLabel (barsLabel, "Length");
+    setupLabel (everyLabel, "Chord every");
+    setupLabel (allLabel, "Whole progression:");
+    setupLabel (allOctLabel, "Octave");
+    setupLabel (allInvLabel, "Invert");
+    traditionalLabel.setJustificationType (juce::Justification::centredRight);
+    for (auto* l : { &traditionalLabel, &adventurousLabel, &barsLabel, &everyLabel, &allLabel, &allOctLabel, &allInvLabel })
+        addAndMakeVisible (*l);
+    for (auto* l : { &allOctValue, &allInvValue })
+    {
+        l->setJustificationType (juce::Justification::centred);
+        addAndMakeVisible (*l);
+    }
+
+    adventureSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    adventureSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    adventureSlider.setRange (0.0, 1.0, 0.01);
+    adventureSlider.setTooltip ("Left: familiar chord moves and plain chords. Right: unexpected moves and richer chords. Always in your key.");
+    adventureSlider.onValueChange = [this]
+    {
+        model.adventure = (float) adventureSlider.getValue();
+        processor.modelChanged();
+    };
+    addAndMakeVisible (adventureSlider);
+
+    for (int bars : barChoices)
+        barsBox.addItem (juce::String (bars) + (bars == 1 ? " bar" : " bars"), bars);
+    barsBox.onChange = [this]
+    {
+        model.shuffleBars = juce::jmax (1, barsBox.getSelectedId());
+        processor.modelChanged();
+    };
+    everyBox.addItem ("2 beats", 2);
+    everyBox.addItem ("1 bar", 4);
+    everyBox.addItem ("2 bars", 8);
+    everyBox.onChange = [this]
+    {
+        model.chordEvery = juce::jmax (1, everyBox.getSelectedId());
+        processor.modelChanged();
+    };
+    addAndMakeVisible (barsBox);
+    addAndMakeVisible (everyBox);
+
+    auto wholeStep = [this] (juce::TextButton& b, int* value, int step, int lo, int hi)
+    {
+        addAndMakeVisible (b);
+        b.onClick = [this, value, step, lo, hi]
+        {
+            *value = juce::jlimit (lo, hi, *value + step);
+            processor.modelChanged();
+        };
+    };
+    wholeStep (allOctDown, &model.octave, -1, -3, 3);
+    wholeStep (allOctUp, &model.octave, 1, -3, 3);
+    wholeStep (allInvDown, &model.invert, -1, -4, 4);
+    wholeStep (allInvUp, &model.invert, 1, -4, 4);
+
     // Feel
     setupLabel (rhythmLabel, "Rhythm");
     setupLabel (spreadLabel, "Voicing");
@@ -630,6 +786,13 @@ CruzChordsAudioProcessorEditor::CruzChordsAudioProcessorEditor (CruzChordsAudioP
     // Footer
     playButton.setClickingTogglesState (false);
     playButton.onClick = [this] { processor.playing = ! processor.playing.load(); };
+    followToggle.setTooltip ("Start and stop the progression with FL Studio's play button and the space bar.");
+    followToggle.onClick = [this]
+    {
+        model.followHost = followToggle.getToggleState();
+        processor.modelChanged();
+    };
+    addAndMakeVisible (followToggle);
     addAndMakeVisible (playButton);
     tempoLabel.setColour (juce::Label::textColourId, Colours::dim);
     addAndMakeVisible (tempoLabel);
@@ -658,7 +821,8 @@ CruzChordsAudioProcessorEditor::CruzChordsAudioProcessorEditor (CruzChordsAudioP
 
     hintLabel.setColour (juce::Label::textColourId, Colours::dim);
     hintLabel.setFont (font (12.0f));
-    hintLabel.setText ("Play loops the progression. While FL Studio's song plays, it follows the song's position and tempo.",
+    hintLabel.setText ("With Play with FL on, the progression plays whenever FL Studio plays, following its tempo and bar position. "
+                       "Turn it off if you dragged the MIDI into your song.",
                        juce::dontSendNotification);
     addAndMakeVisible (hintLabel);
 
@@ -667,7 +831,7 @@ CruzChordsAudioProcessorEditor::CruzChordsAudioProcessorEditor (CruzChordsAudioP
     processor.addChangeListener (this);
     startTimerHz (30);
 
-    setSize (1080, 610);
+    setSize (1100, 700);
 }
 
 CruzChordsAudioProcessorEditor::~CruzChordsAudioProcessorEditor()
@@ -838,9 +1002,12 @@ void CruzChordsAudioProcessorEditor::syncFromModel()
 
     const bool hasSel = selectedSlot >= 0;
     for (juce::Component* c : std::initializer_list<juce::Component*> { &rootBox, &typeBox, &lengthBox, &invDown, &invUp, &octDown, &octUp,
-                                                                         &moveLeft, &moveRight, &deleteButton, &duplicateButton })
+                                                                         &moveLeft, &moveRight, &deleteButton, &duplicateButton, &lockButton })
         c->setEnabled (hasSel);
     clearButton.setEnabled (! model.chords.empty());
+
+    lockButton.setToggleState (hasSel && model.chords[(size_t) selectedSlot].locked, juce::dontSendNotification);
+    lockButton.setButtonText (lockButton.getToggleState() ? "Locked" : "Lock");
 
     if (hasSel)
     {
@@ -878,6 +1045,27 @@ void CruzChordsAudioProcessorEditor::syncFromModel()
     smoothToggle.setToggleState (model.smooth, juce::dontSendNotification);
     bassToggle.setToggleState (model.bass, juce::dontSendNotification);
     keysToggle.setToggleState (model.keysPlayChords, juce::dontSendNotification);
+    followToggle.setToggleState (model.followHost, juce::dontSendNotification);
+    adventureSlider.setValue (model.adventure, juce::dontSendNotification);
+    barsBox.setSelectedId (model.shuffleBars, juce::dontSendNotification);
+    if (barsBox.getSelectedId() == 0)
+        barsBox.setText (juce::String (model.shuffleBars) + " bars", juce::dontSendNotification);
+    everyBox.setSelectedId ((int) model.chordEvery, juce::dontSendNotification);
+    auto signedText = [] (int v) { return (v > 0 ? "+" : "") + juce::String (v); };
+    allOctValue.setText (signedText (model.octave), juce::dontSendNotification);
+    allInvValue.setText (signedText (model.invert), juce::dontSendNotification);
+    allOctDown.setEnabled (model.octave > -3);
+    allOctUp.setEnabled (model.octave < 3);
+    allInvDown.setEnabled (model.invert > -4);
+    allInvUp.setEnabled (model.invert < 4);
+
+    {
+        double total = 0;
+        for (const auto& c : model.chords)
+            total += c.beats;
+        stripInfo = model.chords.empty() ? juce::String()
+                                         : juce::String ((int) model.chords.size()) + " chords, " + lengthText (total);
+    }
     velocitySlider.setValue (std::round (model.velocity * 127.0f), juce::dontSendNotification);
 
     // Sound
@@ -905,7 +1093,7 @@ void CruzChordsAudioProcessorEditor::changeListenerCallback (juce::ChangeBroadca
 void CruzChordsAudioProcessorEditor::timerCallback()
 {
     const bool on = processor.playing.load();
-    strip.setPlaying (on ? processor.getPlayingSlot() : -1);
+    strip.setPlaying (processor.isSounding() ? processor.getPlayingSlot() : -1);
     if (playButton.getToggleState() != on)
     {
         playButton.setToggleState (on, juce::dontSendNotification);
@@ -946,7 +1134,9 @@ void CruzChordsAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont (font (12.0f));
     g.drawText ("Click a chord to hear it. With a chord selected below, clicking a pad swaps it in.",
                 padsTitle.withTrimmedLeft (170), juce::Justification::centredLeft);
-    g.drawText ("Click a chord to hear and edit it.", stripTitle.withTrimmedLeft (150), juce::Justification::centredLeft);
+    g.drawText ("Click a chord to hear and edit it. Click its padlock to keep it when you shuffle."
+                    + (stripInfo.isNotEmpty() ? "   (" + stripInfo + ")" : juce::String()),
+                stripTitle.withTrimmedLeft (150), juce::Justification::centredLeft);
 }
 
 void CruzChordsAudioProcessorEditor::resized()
@@ -1017,34 +1207,63 @@ void CruzChordsAudioProcessorEditor::resized()
         moveLeft.setBounds (r.removeFromRight (96).reduced (0, 1));
     }
     area.removeFromTop (4);
-    strip.setBounds (area.removeFromTop (100));
+    {
+        auto row = area.removeFromTop (30);
+        shuffleButton.setBounds (row.removeFromLeft (110));
+        row.removeFromLeft (10);
+        traditionalLabel.setBounds (row.removeFromLeft (76));
+        adventureSlider.setBounds (row.removeFromLeft (170));
+        adventurousLabel.setBounds (row.removeFromLeft (90));
+        row.removeFromLeft (10);
+        barsLabel.setBounds (row.removeFromLeft (48));
+        barsBox.setBounds (row.removeFromLeft (90));
+        row.removeFromLeft (10);
+        everyLabel.setBounds (row.removeFromLeft (80));
+        everyBox.setBounds (row.removeFromLeft (90));
+
+        allInvUp.setBounds (row.removeFromRight (26));
+        allInvValue.setBounds (row.removeFromRight (30));
+        allInvDown.setBounds (row.removeFromRight (26));
+        allInvLabel.setBounds (row.removeFromRight (44));
+        row.removeFromRight (8);
+        allOctUp.setBounds (row.removeFromRight (26));
+        allOctValue.setBounds (row.removeFromRight (30));
+        allOctDown.setBounds (row.removeFromRight (26));
+        allOctLabel.setBounds (row.removeFromRight (50));
+        allLabel.setBounds (row.withTrimmedLeft (6));
+        allLabel.setJustificationType (juce::Justification::centredRight);
+    }
+    area.removeFromTop (6);
+    strip.setBounds (area.removeFromTop (140));
     area.removeFromTop (8);
     {
         auto row = area.removeFromTop (30);
         rootLabel.setBounds (row.removeFromLeft (36));
-        rootBox.setBounds (row.removeFromLeft (92));
-        row.removeFromLeft (12);
+        rootBox.setBounds (row.removeFromLeft (86));
+        row.removeFromLeft (8);
         typeLabel.setBounds (row.removeFromLeft (36));
-        typeBox.setBounds (row.removeFromLeft (150));
-        row.removeFromLeft (12);
+        typeBox.setBounds (row.removeFromLeft (140));
+        row.removeFromLeft (8);
         lengthLabel.setBounds (row.removeFromLeft (48));
-        lengthBox.setBounds (row.removeFromLeft (92));
-        row.removeFromLeft (12);
-        invLabel.setBounds (row.removeFromLeft (64));
+        lengthBox.setBounds (row.removeFromLeft (88));
+        row.removeFromLeft (8);
+        invLabel.setBounds (row.removeFromLeft (60));
         invDown.setBounds (row.removeFromLeft (26));
-        invValue.setBounds (row.removeFromLeft (40));
+        invValue.setBounds (row.removeFromLeft (34));
         invUp.setBounds (row.removeFromLeft (26));
         row.removeFromLeft (10);
         octLabel.setBounds (row.removeFromLeft (48));
         octDown.setBounds (row.removeFromLeft (26));
-        octValue.setBounds (row.removeFromLeft (32));
+        octValue.setBounds (row.removeFromLeft (28));
         octUp.setBounds (row.removeFromLeft (26));
 
-        clearButton.setBounds (row.removeFromRight (78));
+        clearButton.setBounds (row.removeFromRight (74));
         row.removeFromRight (6);
-        deleteButton.setBounds (row.removeFromRight (64));
+        deleteButton.setBounds (row.removeFromRight (62));
         row.removeFromRight (6);
-        duplicateButton.setBounds (row.removeFromRight (82));
+        duplicateButton.setBounds (row.removeFromRight (80));
+        row.removeFromRight (6);
+        lockButton.setBounds (row.removeFromRight (62));
     }
     area.removeFromTop (8);
     feelTitle = area.removeFromTop (26);
@@ -1069,7 +1288,9 @@ void CruzChordsAudioProcessorEditor::resized()
         auto row = area.removeFromTop (60);
         playButton.setBounds (row.removeFromLeft (130));
         row.removeFromLeft (14);
-        tempoLabel.setBounds (row.removeFromLeft (230));
+        auto col = row.removeFromLeft (230);
+        followToggle.setBounds (col.removeFromTop (30));
+        tempoLabel.setBounds (col);
         saveButton.setBounds (row.removeFromRight (150).reduced (0, 10));
         row.removeFromRight (14);
         dragZone.setBounds (row.removeFromRight (300));

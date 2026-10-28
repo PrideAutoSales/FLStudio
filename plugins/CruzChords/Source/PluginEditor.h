@@ -51,9 +51,17 @@ public:
 
     std::function<void (int)> onSelect;
     std::function<void (int, bool)> onAudition;
+    std::function<void (int)> onToggleLock;
 
 private:
-    std::vector<juce::Rectangle<float>> slotRects() const;
+    // One chord can wrap onto the next row, so it may have more than one piece.
+    struct Segment
+    {
+        int slot;
+        juce::Rectangle<float> bounds;
+        bool first;
+    };
+    std::vector<Segment> segments() const;
 
     CruzChordsAudioProcessor& processor;
     int selected = -1, playing = -1, held = -1;
@@ -128,6 +136,7 @@ private:
     juce::ComboBox rootBox, typeBox, lengthBox;
     juce::TextButton invDown { "-" }, invUp { "+" }, octDown { "-" }, octUp { "+" };
     juce::Label invValue, octValue;
+    juce::TextButton lockButton { "Lock" };
     juce::TextButton moveLeft { "Move left" }, moveRight { "Move right" }, deleteButton { "Delete" },
         duplicateButton { "Duplicate" }, clearButton { "Clear all" };
 
@@ -137,7 +146,16 @@ private:
         keysToggle { "Keys play chords" };
     juce::Slider velocitySlider;
 
+    // Shuffle and whole-progression controls.
+    juce::TextButton shuffleButton { "Shuffle" };
+    juce::Label traditionalLabel, adventurousLabel, barsLabel, everyLabel, allLabel, allOctLabel, allInvLabel;
+    juce::Slider adventureSlider;
+    juce::ComboBox barsBox, everyBox;
+    juce::TextButton allOctDown { "-" }, allOctUp { "+" }, allInvDown { "-" }, allInvUp { "+" };
+    juce::Label allOctValue, allInvValue;
+
     juce::TextButton playButton { "Play" };
+    juce::ToggleButton followToggle { "Play with FL (space bar)" };
     juce::Label tempoLabel;
     cruzchordsui::MidiDragZone dragZone;
     juce::TextButton saveButton { "Save MIDI file" };
@@ -146,6 +164,7 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     juce::Array<juce::File> pluginFiles;
     int selectedSlot = -1;
+    juce::String stripInfo;
     juce::Rectangle<int> padsTitle, stripTitle, feelTitle;
 
     cruz::EditorRedrawGuard redrawGuard { *this };

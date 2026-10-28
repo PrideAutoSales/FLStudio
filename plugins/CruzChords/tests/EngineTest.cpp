@@ -5,6 +5,7 @@
 
 #include <cstdio>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -192,6 +193,76 @@ int main()
         int ons = 0;
         player.process (seq, 5.0, 120.0 / 60.0 / 48000.0, 512, true, [&] (int off, int, float, bool on) { ons += on && off == 0; });
         check (ons == 3, "jumping into beat 6 plays the V chord immediately");
+    }
+
+    // Shuffle stays in the key, keeps locked chords and fills the length asked for.
+    {
+        bool allInKey = true, sizesRight = true, locksKept = true;
+        int tonicStarts = 0, runs = 0, richChordsTraditional = 0, richChordsAdventurous = 0;
+        for (int scale = 0; scale < (int) scales().size(); ++scale)
+            for (double adventure : { 0.0, 0.5, 1.0 })
+                for (uint32_t seed = 1; seed <= 40; ++seed)
+                {
+                    auto current = parseProgression ("vi IV I V");
+                    current[1].locked = true;
+                    current[1].beats = 4.0;
+                    ShuffleOptions o;
+                    o.scale = scale;
+                    o.adventure = adventure;
+                    o.totalBeats = 128.0; // 32 bars
+                    o.chordBeats = 4.0;
+                    o.seed = seed;
+                    const auto out = shuffleProgression (current, o);
+                    sizesRight &= out.size() == 32;
+                    locksKept &= out[1].offset == current[1].offset && out[1].type == current[1].type && out[1].locked;
+                    for (const auto& c : out)
+                        if (! c.locked)
+                        {
+                            allInKey &= chordInScale (scale, c.offset, c.type);
+                            const bool rich = chordTypeInfo (c.type).count > 4 || c.type == Sus2 || c.type == Sus4 || c.type == Add9 || c.type == MinAdd9;
+                            if (adventure == 0.0) richChordsTraditional += rich;
+                            if (adventure == 1.0) richChordsAdventurous += rich;
+                        }
+                    if (adventure == 0.0)
+                    {
+                        ++runs;
+                        tonicStarts += out[0].offset == 0;
+                    }
+                }
+        check (allInKey, "shuffled chords only use notes from the key (8 scales, 960 shuffles)");
+        check (sizesRight, "32 bars with a chord every bar makes 32 chords");
+        check (locksKept, "locked chords are never changed");
+        check (tonicStarts * 10 >= runs * 7, "traditional shuffles mostly start on the home chord");
+        check (richChordsTraditional == 0 && richChordsAdventurous > 200, "adventurous uses richer chords, traditional does not");
+
+        ShuffleOptions o;
+        o.totalBeats = 16.0;
+        o.chordBeats = 2.0;
+        check (shuffleProgression ({}, o).size() == 8, "4 bars with a chord every 2 beats makes 8 chords");
+    }
+
+    // A 32-bar progression with fast gates plays to the end.
+    {
+        ShuffleOptions o;
+        o.totalBeats = 128.0;
+        o.chordBeats = 2.0;
+        RenderOptions opt;
+        opt.rhythm = rArpUpDown;
+        auto seq = std::make_unique<Sequence> (render (shuffleProgression ({}, o), opt));
+        check (seq->numSlots == 64 && seq->totalBeats == 128.0 && seq->numHits == 512, "64 chords over 32 bars, every 16th note present");
+    }
+
+    // Whole-progression octave and inversion.
+    {
+        VoicingOptions v;
+        v.smooth = false;
+        v.invert = 1;
+        auto out = voiceProgression (parseProgression ("I"), 0, v);
+        check (out[0] == std::vector<int> ({ 52, 55, 60 }), "invert +1 turns C E G into E G C");
+        v.invert = -1;
+        v.octave = 1;
+        out = voiceProgression (parseProgression ("I"), 0, v);
+        check (out[0] == std::vector<int> ({ 55, 60, 64 }) , "invert -1 and octave +1 give G C E an octave up");
     }
 
     // One key plays a chord.

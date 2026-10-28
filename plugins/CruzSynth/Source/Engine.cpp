@@ -789,8 +789,33 @@ void Engine::publishLiveState()
     live.activeVoices.store (active, std::memory_order_relaxed);
     live.anyVoice.store (shown != nullptr, std::memory_order_relaxed);
 
-    for (int d = 1; d < DstCount; ++d)
-        live.dstNorm[(size_t) d].store (shown != nullptr ? shown->effNorm[d] : block->baseNorm[d], std::memory_order_relaxed);
+    if (shown != nullptr)
+    {
+        for (int d = 1; d < DstCount; ++d)
+            live.dstNorm[(size_t) d].store (shown->effNorm[d], std::memory_order_relaxed);
+    }
+    else
+    {
+        // Nothing playing: apply only the sources that exist without a note (macros and
+        // the wheels), so a macro on an effect still works while the synth is silent.
+        const auto& B = *block;
+        float acc[DstCount] {};
+        for (int s = 0; s < B.numSlots; ++s)
+        {
+            const auto& S = B.slots[s];
+            float v;
+            if (S.src >= (int) ModSrc::Macro1 && S.src <= (int) ModSrc::Macro4) v = B.macros[S.src - (int) ModSrc::Macro1];
+            else if (S.src == (int) ModSrc::ModWheel) v = modWheel;
+            else if (S.src == (int) ModSrc::Aftertouch) v = aftertouch;
+            else if (S.src == (int) ModSrc::PitchBend) v = pitchBend;
+            else continue;
+            if (S.bipolar && ! modSourceIsBipolar (S.src))
+                v = v * 2.0f - 1.0f;
+            acc[S.dst] += S.amount * v;
+        }
+        for (int d = 1; d < DstCount; ++d)
+            live.dstNorm[(size_t) d].store (juce::jlimit (0.0f, 1.0f, B.baseNorm[d] + acc[d]), std::memory_order_relaxed);
+    }
 
     for (int e = 0; e < kNumEnvs; ++e)
     {

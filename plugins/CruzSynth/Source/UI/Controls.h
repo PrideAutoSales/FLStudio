@@ -34,6 +34,9 @@ public:
 
     int getDestination() const noexcept { return destination; }
 
+    // Draw as a small value box (label and number, drag up or down) instead of a knob.
+    void setCompact (bool shouldBeCompact);
+
 private:
     void timerCallback() override;
     void showMenu();
@@ -44,6 +47,9 @@ private:
     int destination = -1;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
 
+    void paintCompact (juce::Graphics&);
+
+    bool compact = false;
     bool dropHover = false, adjustingMod = false;
     int activeSlot = -1;
     float dragStartAmount = 0.0f;

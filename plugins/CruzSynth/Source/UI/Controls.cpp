@@ -53,8 +53,56 @@ void ModKnob::timerCallback()
     }
 }
 
+void ModKnob::setCompact (bool c)
+{
+    compact = c;
+    setSliderStyle (c ? juce::Slider::LinearBarVertical : juce::Slider::RotaryHorizontalVerticalDrag);
+    setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+    getProperties().set ("labelHeight", c ? 0 : 15);
+    setMouseDragSensitivity (c ? 400 : 250);
+    repaint();
+}
+
+void ModKnob::paintCompact (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (1.0f);
+    g.setColour (dropHover ? colours::accent2.withAlpha (0.35f) : colours::display);
+    g.fillRoundedRectangle (r, 4.0f);
+    g.setColour (isMouseOverOrDragging() ? colours::accent : colours::outline);
+    g.drawRoundedRectangle (r, 4.0f, 1.0f);
+
+    // Modulation shows as thin coloured bars along the bottom edge.
+    if (destination > 0)
+    {
+        auto bar = r.reduced (4.0f, 0.0f).removeFromBottom (3.0f);
+        for (auto s : proc.slotsForDestination (destination))
+        {
+            const int src = juce::roundToInt (proc.apvts.getRawParameterValue (id::slot (s, "src"))->load());
+            g.setColour (modSourceColour (src));
+            g.fillRect (bar.removeFromLeft (juce::jmin (bar.getWidth(), 10.0f)));
+            bar.removeFromLeft (2.0f);
+        }
+    }
+
+    auto text = r.reduced (6.0f, 0.0f);
+    g.setFont (font (10.5f, true));
+    g.setColour (colours::textDim);
+    g.drawText (label, text, juce::Justification::centredLeft);
+    g.setFont (font (12.0f, true));
+    g.setColour (colours::text);
+    g.drawText (adjustingMod && activeSlot >= 0
+                    ? juce::String (juce::roundToInt (slotParam (activeSlot, "amount")->convertFrom0to1 (slotParam (activeSlot, "amount")->getValue()) * 100.0f)) + "%"
+                    : getTextFromValue (getValue()),
+                text, juce::Justification::centredRight);
+}
+
 void ModKnob::paint (juce::Graphics& g)
 {
+    if (compact)
+    {
+        paintCompact (g);
+        return;
+    }
     juce::Slider::paint (g);
 
     auto bounds = getLocalBounds();

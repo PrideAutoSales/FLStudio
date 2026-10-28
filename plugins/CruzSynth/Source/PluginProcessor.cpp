@@ -16,7 +16,7 @@ CruzSynthProcessor::CruzSynthProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "CruzSynth", createParameterLayout()),
       engine (apvts, live, lfoTables),
-      fx (apvts)
+      fx (apvts, live)
 {
     for (int o = 0; o < kNumOscs; ++o)
         uiTables[(size_t) o] = audioTables[(size_t) o] = tables::makeFactory (0);
@@ -288,7 +288,7 @@ void CruzSynthProcessor::loadFactoryPreset (int index)
         setTable (o, tables::makeFactory (0));
     for (int l = 0; l < kNumLfos; ++l)
         setLfoPoints (l, defaultLfoPoints());
-    fx.setOrder ({ FxDistortion, FxChorus, FxPhaser, FxDelay, FxReverb, FxCompressor, FxEq });
+    fx.setOrder (FxRack::defaultOrder());
 
     if (index == 0)
     {
@@ -315,7 +315,12 @@ void CruzSynthProcessor::applyRecipe (const juce::String& recipe)
                                    "OscBPos", "OscBDetune", "OscBBlend", "OscBWarp", "OscBPhase", "OscBPan",
                                    "OscBLevel", "SubLevel", "SubPan", "NoiseLevel", "NoisePan", "NoiseColor",
                                    "FltCutoff", "FltRes", "FltDrive", "FltMix", "Lfo1Rate", "Lfo2Rate",
-                                   "Lfo3Rate", "Lfo4Rate", "MasterVol" };
+                                   "Lfo3Rate", "Lfo4Rate", "MasterVol",
+                                   "FxHypDetune", "FxHypMix", "FxHypWide", "FxDistDrive", "FxDistFreq", "FxDistMix",
+                                   "FxFlaFeedback", "FxFlaMix", "FxPhaFreq", "FxPhaFeedback", "FxPhaMix",
+                                   "FxChoDepth", "FxChoMix", "FxDlyFeedback", "FxDlyMix", "FxMbDepth",
+                                   "FxEqLowGain", "FxEqHighGain", "FxFilCutoff", "FxFilRes", "FxFilDrive", "FxFilMix",
+                                   "FxRevSize", "FxRevDecay", "FxRevMix" };
     static_assert (std::size (sources) == (size_t) kNumModSources);
     static_assert (std::size (dests) == (size_t) DstCount);
 
@@ -356,11 +361,10 @@ void CruzSynthProcessor::applyRecipe (const juce::String& recipe)
         }
         else if (key == "fx")
         {
-            std::array<int, kNumFx> order {};
-            auto items = juce::StringArray::fromTokens (value, ",", "");
-            for (int i = 0; i < kNumFx; ++i)
-                order[(size_t) i] = items[i].getIntValue();
-            fx.setOrder (order);
+            juce::Array<int> list;
+            for (auto& item : juce::StringArray::fromTokens (value, ",", ""))
+                list.add (item.getIntValue());
+            fx.setOrder (FxRack::orderFromList (list));
         }
         else
         {

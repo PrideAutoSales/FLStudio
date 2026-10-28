@@ -600,6 +600,139 @@ void LfoView::mouseDoubleClick (const juce::MouseEvent& e)
 }
 
 //==============================================================================
+FxCurveView::FxCurveView (CruzSynthProcessor& p, Kind k) : proc (p), kind (k) { startTimerHz (20); }
+
+float FxCurveView::value (const char* pid) const
+{
+    const int dst = modDestinationForParam (pid);
+    if (dst > 0)
+        return proc.apvts.getParameter (pid)->convertFrom0to1 (proc.live.dstNorm[(size_t) dst].load());
+    return param (proc, pid);
+}
+
+void FxCurveView::timerCallback()
+{
+    static const char* ids[3][9] = {
+        { "fx_dist_mode", "fx_dist_drive", "fx_dist_mix", "fx_dist_on", nullptr },
+        { "fx_eq_lowtype", "fx_eq_lowfreq", "fx_eq_lowq", "fx_eq_lowgain", "fx_eq_hightype", "fx_eq_highfreq", "fx_eq_highq", "fx_eq_highgain", "fx_eq_on" },
+        { "fx_fil_type", "fx_fil_cutoff", "fx_fil_res", "fx_fil_mix", "fx_fil_on", nullptr } };
+    float h = 0.0f;
+    for (auto* id : ids[kind])
+        if (id != nullptr)
+            h = h * 1.37f + value (id);
+    if (h != lastHash)
+    {
+        lastHash = h;
+        repaint();
+    }
+}
+
+void FxCurveView::paint (juce::Graphics& g)
+{
+    const auto bounds = getLocalBounds().toFloat();
+    drawDisplayBackground (g, bounds);
+    if (kind == Distortion)
+        paintDistortion (g, bounds.reduced (8.0f));
+    else
+        paintResponse (g, bounds.reduced (6.0f, 8.0f));
+}
+
+void FxCurveView::paintDistortion (juce::Graphics& g, juce::Rectangle<float> r)
+{
+    const int mode = juce::roundToInt (value ("fx_dist_mode"));
+    const float drive = value ("fx_dist_drive"), mix = value ("fx_dist_mix");
+    const bool on = value ("fx_dist_on") > 0.5f;
+
+    g.setColour (colours::outline.withAlpha (0.4f));
+    g.drawHorizontalLine ((int) r.getCentreY(), r.getX(), r.getRight());
+    g.drawVerticalLine ((int) r.getCentreX(), r.getY(), r.getBottom());
+
+    juce::Path p;
+    for (int i = 0; i <= 200; ++i)
+    {
+        const float x = -1.0f + 2.0f * (float) i / 200.0f;
+        float y = FxRack::transfer (mode, drive, x);
+        y = juce::jlimit (-1.2f, 1.2f, x + (y - x) * mix);
+        const auto pt = juce::Point<float> (r.getX() + (x + 1.0f) * 0.5f * r.getWidth(),
+                                            r.getCentreY() - y / 1.2f * r.getHeight() * 0.5f);
+        if (i == 0) p.startNewSubPath (pt); else p.lineTo (pt);
+    }
+    g.setColour (on ? colours::accent : colours::textDim);
+    g.strokePath (p, juce::PathStrokeType (1.8f));
+}
+
+void FxCurveView::paintResponse (juce::Graphics& g, juce::Rectangle<float> r)
+{
+    const double sr = 48000.0;
+    const bool on = value (kind == Eq ? "fx_eq_on" : "fx_fil_on") > 0.5f;
+    const float lo = kind == Eq ? -20.0f : -36.0f, hi = kind == Eq ? 20.0f : 24.0f;
+    auto yFor = [&] (float db) { return juce::jmap (juce::jlimit (lo, hi, db), lo, hi, r.getBottom(), r.getY()); };
+
+    g.setColour (colours::outline.withAlpha (0.4f));
+    for (float f : { 100.0f, 1000.0f, 10000.0f })
+        g.drawVerticalLine ((int) (r.getX() + std::log10 (f / 20.0f) / 3.0f * r.getWidth()), r.getY(), r.getBottom());
+    g.drawHorizontalLine ((int) yFor (0.0f), r.getX(), r.getRight());
+
+    fx::Biquad low, high;
+    if (kind == Eq)
+    {
+        static constexpr fx::Biquad::Kind lowKinds[] = { fx::Biquad::LowShelf, fx::Biquad::Peak, fx::Biquad::LowCut };
+        static constexpr fx::Biquad::Kind highKinds[] = { fx::Biquad::HighShelf, fx::Biquad::Peak, fx::Biquad::HighCut };
+        low.design (lowKinds[juce::jlimit (0, 2, juce::roundToInt (value ("fx_eq_lowtype")))], sr,
+                    value ("fx_eq_lowfreq"), value ("fx_eq_lowq"), value ("fx_eq_lowgain"));
+        high.design (highKinds[juce::jlimit (0, 2, juce::roundToInt (value ("fx_eq_hightype")))], sr,
+                     value ("fx_eq_highfreq"), value ("fx_eq_highq"), value ("fx_eq_highgain"));
+    }
+    const int type = juce::roundToInt (value ("fx_fil_type"));
+    const float cutoff = value ("fx_fil_cutoff"), res = value ("fx_fil_res"), mix = value ("fx_fil_mix");
+    const double k = juce::jmax (0.1, 2.0 - 1.9 * res);
+
+    // The FX filter is drawn from its analogue prototype, which the SVF follows closely.
+    auto filterDb = [&] (double f)
+    {
+        using C = std::complex<double>;
+        const C s (0.0, f / cutoff);
+        auto stage = [&] (int t, double kk)
+        {
+            const C den = s * s + kk * s + 1.0;
+            switch (t)
+            {
+                case 0: return C (1.0) / den;
+                case 1: return s * s / den;
+                case 2: return kk * s / den;
+                case 3: return (s * s + 1.0) / den;
+                default: return (1.0 - s * s) / den;
+            }
+        };
+        static constexpr int base[] = { 0, 0, 1, 1, 2, 2, 3, 4 };
+        C h = stage (base[juce::jlimit (0, 7, type)], k) * (1.0 - 0.5 * res);
+        if (type == 1 || type == 3) h *= stage (base[type], 1.414);
+        if (type == 5) h *= stage (2, k);
+        h = 1.0 + (double) mix * (h - 1.0);
+        return (float) (20.0 * std::log10 (std::abs (h) + 1.0e-9));
+    };
+
+    juce::Path p;
+    for (int i = 0; i <= 200; ++i)
+    {
+        const float t = (float) i / 200.0f;
+        const double f = 20.0 * std::pow (1000.0, (double) t);
+        const float db = kind == Eq ? low.magnitudeDb (f, sr) + high.magnitudeDb (f, sr) : filterDb (f);
+        const float x = r.getX() + t * r.getWidth();
+        if (i == 0) p.startNewSubPath (x, yFor (db)); else p.lineTo (x, yFor (db));
+    }
+    juce::Path fill (p);
+    fill.lineTo (r.getRight(), yFor (0.0f));
+    fill.lineTo (r.getX(), yFor (0.0f));
+    fill.closeSubPath();
+    const auto col = on ? colours::accent : colours::textDim;
+    g.setColour (col.withAlpha (0.12f));
+    g.fillPath (fill);
+    g.setColour (col);
+    g.strokePath (p, juce::PathStrokeType (1.8f));
+}
+
+//==============================================================================
 ScopeView::ScopeView (CruzSynthProcessor& p) : proc (p), buf (2048) { startTimerHz (30); }
 
 void ScopeView::paint (juce::Graphics& g)

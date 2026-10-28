@@ -49,6 +49,17 @@ enum ModDst
     DstFltCutoff, DstFltRes, DstFltDrive, DstFltMix,
     DstLfo1Rate, DstLfo2Rate, DstLfo3Rate, DstLfo4Rate,
     DstMasterVol,
+    // Effects. These follow the newest voice, or the macros and wheels when nothing plays.
+    DstFxHypDetune, DstFxHypMix, DstFxHypWide,
+    DstFxDistDrive, DstFxDistFreq, DstFxDistMix,
+    DstFxFlaFeedback, DstFxFlaMix,
+    DstFxPhaFreq, DstFxPhaFeedback, DstFxPhaMix,
+    DstFxChoDepth, DstFxChoMix,
+    DstFxDlyFeedback, DstFxDlyMix,
+    DstFxMbDepth,
+    DstFxEqLowGain, DstFxEqHighGain,
+    DstFxFilCutoff, DstFxFilRes, DstFxFilDrive, DstFxFilMix,
+    DstFxRevSize, DstFxRevDecay, DstFxRevMix,
     DstCount
 };
 
@@ -76,8 +87,12 @@ double syncDivisionBeats (int index);
 
 juce::StringArray distortionModeNames();
 juce::StringArray fxModuleNames();
-constexpr int kNumFx = 7;
-enum FxModule { FxDistortion, FxChorus, FxPhaser, FxDelay, FxReverb, FxCompressor, FxEq };
+constexpr int kNumFx = 11;
+// New modules are appended so saved chains and presets keep their meaning.
+enum FxModule { FxDistortion, FxChorus, FxPhaser, FxDelay, FxReverb, FxCompressor, FxEq,
+                FxHyper, FxFlanger, FxMultiband, FxFilter };
+juce::String fxOnParamID (int module);
+juce::StringArray fxFilterTypeNames();
 
 //==============================================================================
 namespace id

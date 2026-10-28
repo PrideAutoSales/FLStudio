@@ -62,6 +62,16 @@ const juce::StringArray& modDestinationParamIDs()
         for (int l = 0; l < kNumLfos; ++l)
             a.add (id::lfo (l, "rate"));
         a.add ("master_vol");
+        a.addArray ({ "fx_hyp_detune", "fx_hyp_mix", "fx_hyp_wide",
+                      "fx_dist_drive", "fx_dist_ffreq", "fx_dist_mix",
+                      "fx_fla_feedback", "fx_fla_mix",
+                      "fx_pha_freq", "fx_pha_feedback", "fx_pha_mix",
+                      "fx_cho_depth", "fx_cho_mix",
+                      "fx_dly_feedback", "fx_dly_mix",
+                      "fx_mb_depth",
+                      "fx_eq_lowgain", "fx_eq_highgain",
+                      "fx_fil_cutoff", "fx_fil_res", "fx_fil_drive", "fx_fil_mix",
+                      "fx_rev_size", "fx_rev_decay", "fx_rev_mix" });
         jassert (a.size() == DstCount);
         return a;
     }();
@@ -76,7 +86,17 @@ juce::StringArray modDestinationNames()
             a.add (juce::String (o) + " " + n);
     a.addArray ({ "Sub Level", "Sub Pan", "Noise Level", "Noise Pan", "Noise Color",
                   "Filter Cutoff", "Filter Res", "Filter Drive", "Filter Mix",
-                  "LFO 1 Rate", "LFO 2 Rate", "LFO 3 Rate", "LFO 4 Rate", "Master Volume" });
+                  "LFO 1 Rate", "LFO 2 Rate", "LFO 3 Rate", "LFO 4 Rate", "Master Volume",
+                  "FX Hyper Detune", "FX Hyper Mix", "FX Widen Mix",
+                  "FX Dist Drive", "FX Dist Filter", "FX Dist Mix",
+                  "FX Flanger Feedback", "FX Flanger Mix",
+                  "FX Phaser Freq", "FX Phaser Feedback", "FX Phaser Mix",
+                  "FX Chorus Depth", "FX Chorus Mix",
+                  "FX Delay Feedback", "FX Delay Mix",
+                  "FX Multiband Depth",
+                  "FX EQ Low Gain", "FX EQ High Gain",
+                  "FX Filter Cutoff", "FX Filter Res", "FX Filter Drive", "FX Filter Mix",
+                  "FX Reverb Size", "FX Reverb Decay", "FX Reverb Mix" });
     jassert (a.size() == DstCount);
     return a;
 }
@@ -106,8 +126,30 @@ juce::StringArray subShapeNames()     { return { "Sine", "Triangle", "Saw", "Squ
 juce::StringArray noiseTypeNames()    { return { "White", "Pink", "Brown", "Crackle", "Digital" }; }
 juce::StringArray lfoShapeNames()     { return { "Sine", "Triangle", "Saw Up", "Saw Down", "Square", "Custom", "S&H", "Drift" }; }
 juce::StringArray lfoModeNames()      { return { "Free", "Retrig", "Envelope" }; }
-juce::StringArray distortionModeNames() { return { "Tube", "Soft", "Hard", "Fold", "Crush", "Downsample" }; }
-juce::StringArray fxModuleNames()     { return { "Distortion", "Chorus", "Phaser", "Delay", "Reverb", "Compressor", "EQ" }; }
+juce::StringArray distortionModeNames()
+{
+    return { "Tube", "Soft Clip", "Hard Clip", "Sine Fold", "Crush", "Downsample",
+             "Diode", "Linear Fold", "Asym", "Rectify", "Squash", "Fuzz", "Tape" };
+}
+
+juce::StringArray fxModuleNames()
+{
+    return { "Distortion", "Chorus", "Phaser", "Delay", "Reverb", "Compressor", "EQ",
+             "Hyper", "Flanger", "Multiband", "Filter" };
+}
+
+juce::String fxOnParamID (int module)
+{
+    static const char* ids[] = { "fx_dist_on", "fx_cho_on", "fx_pha_on", "fx_dly_on", "fx_rev_on", "fx_cmp_on", "fx_eq_on",
+                                 "fx_hyp_on", "fx_fla_on", "fx_mb_on", "fx_fil_on" };
+    static_assert (std::size (ids) == kNumFx);
+    return juce::isPositiveAndBelow (module, kNumFx) ? ids[module] : "";
+}
+
+juce::StringArray fxFilterTypeNames()
+{
+    return { "Low 12", "Low 24", "High 12", "High 24", "Band 12", "Band 24", "Notch", "Peak" };
+}
 
 juce::StringArray syncDivisionNames()
 {
@@ -132,9 +174,24 @@ namespace
         return r;
     }
 
+    // A number with a unit, with fewer decimals as the number grows.
     Attr withLabel (const char* label)
     {
-        return Attr().withLabel (label);
+        return Attr().withLabel (label)
+                     .withStringFromValueFunction ([label] (float v, int)
+                     {
+                         const float a = std::abs (v);
+                         return juce::String (v, a < 10.0f ? 2 : (a < 100.0f ? 1 : 0)) + " " + label;
+                     })
+                     .withValueFromStringFunction ([] (const juce::String& s) { return s.getFloatValue(); });
+    }
+
+    // Whole numbers with a unit, e.g. "-12 st".
+    Attr rounded (const char* unit)
+    {
+        return Attr().withLabel (unit)
+                     .withStringFromValueFunction ([unit] (float v, int) { return juce::String (juce::roundToInt (v)) + " " + unit; })
+                     .withValueFromStringFunction ([] (const juce::String& s) { return s.getFloatValue(); });
     }
 
     Attr percent()
@@ -192,6 +249,13 @@ namespace
     {
         layout.add (std::make_unique<P> (juce::ParameterID { pid, 1 }, std::forward<Args> (args)...));
     }
+
+    // Parameters added in 0.3 carry a newer version hint so hosts keep the older ones in place.
+    template <typename P, typename... Args>
+    void add3 (juce::AudioProcessorValueTreeState::ParameterLayout& layout, const juce::String& pid, Args&&... args)
+    {
+        layout.add (std::make_unique<P> (juce::ParameterID { pid, 3 }, std::forward<Args> (args)...));
+    }
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
@@ -207,8 +271,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         add<APF> (L, id::osc (o, "pan"), n + "Pan", juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f, pan());
         add<API> (L, id::osc (o, "octave"), n + "Octave", -4, 4, 0);
         add<API> (L, id::osc (o, "semi"), n + "Semi", -12, 12, 0);
-        add<APF> (L, id::osc (o, "fine"), n + "Fine", juce::NormalisableRange<float> (-100.0f, 100.0f), 0.0f, withLabel ("ct"));
-        add<APF> (L, id::osc (o, "coarse"), n + "Pitch", juce::NormalisableRange<float> (-48.0f, 48.0f), 0.0f, withLabel ("st"));
+        add<APF> (L, id::osc (o, "fine"), n + "Fine", juce::NormalisableRange<float> (-100.0f, 100.0f), 0.0f, rounded ("ct"));
+        add<APF> (L, id::osc (o, "coarse"), n + "Pitch", juce::NormalisableRange<float> (-48.0f, 48.0f), 0.0f, rounded ("st"));
         add<APF> (L, id::osc (o, "pos"), n + "WT Pos", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f, percent());
         add<API> (L, id::osc (o, "unison"), n + "Unison", 1, kMaxUnison, 1);
         add<APF> (L, id::osc (o, "detune"), n + "Detune", juce::NormalisableRange<float> (0.0f, 1.0f), 0.25f, percent());
@@ -344,6 +408,68 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     add<APF> (L, "fx_eq_lowgain", "EQ Low Gain", juce::NormalisableRange<float> (-18.0f, 18.0f), 0.0f, decibels());
     add<APF> (L, "fx_eq_highfreq", "EQ High Freq", skewed (1000.0f, 20000.0f, 5000.0f), 6000.0f, hertz());
     add<APF> (L, "fx_eq_highgain", "EQ High Gain", juce::NormalisableRange<float> (-18.0f, 18.0f), 0.0f, decibels());
+
+    // 0.3: the rest of the rack, and more controls on the modules above.
+    const juce::NormalisableRange<float> unit (0.0f, 1.0f);
+    add3<APB> (L, "fx_hyp_on", "Hyper On", false);
+    add3<APF> (L, "fx_hyp_rate", "Hyper Rate", skewed (0.05f, 10.0f, 1.0f), 0.8f, hertz());
+    add3<APF> (L, "fx_hyp_detune", "Hyper Detune", unit, 0.3f, percent());
+    add3<API> (L, "fx_hyp_voices", "Hyper Voices", 2, 7, 4);
+    add3<APF> (L, "fx_hyp_mix", "Hyper Mix", unit, 0.5f, percent());
+    add3<APF> (L, "fx_hyp_size", "Widen Size", unit, 0.5f, percent());
+    add3<APF> (L, "fx_hyp_wide", "Widen Mix", unit, 0.0f, percent());
+
+    add3<APC> (L, "fx_dist_fmode", "Distortion Filter", juce::StringArray { "Off", "Pre", "Post" }, 0);
+    add3<APC> (L, "fx_dist_ftype", "Distortion Filter Type", juce::StringArray { "Low", "Band", "High" }, 0);
+    add3<APF> (L, "fx_dist_ffreq", "Distortion Filter Freq", skewed (20.0f, 20000.0f, 1000.0f), 1000.0f, hertz());
+    add3<APF> (L, "fx_dist_fres", "Distortion Filter Res", unit, 0.2f, percent());
+
+    add3<APB> (L, "fx_fla_on", "Flanger On", false);
+    add3<APB> (L, "fx_fla_sync", "Flanger Sync", false);
+    add3<APC> (L, "fx_fla_div", "Flanger Division", syncDivisionNames(), 3);
+    add3<APF> (L, "fx_fla_rate", "Flanger Rate", skewed (0.02f, 10.0f, 0.5f), 0.3f, hertz());
+    add3<APF> (L, "fx_fla_depth", "Flanger Depth", unit, 0.6f, percent());
+    add3<APF> (L, "fx_fla_feedback", "Flanger Feedback", juce::NormalisableRange<float> (-0.95f, 0.95f), 0.5f, bipolarPercent());
+    add3<APF> (L, "fx_fla_spread", "Flanger Stereo", unit, 0.25f, percent());
+    add3<APF> (L, "fx_fla_mix", "Flanger Mix", unit, 0.5f, percent());
+
+    add3<APC> (L, "fx_pha_stages", "Phaser Stages", juce::StringArray { "2", "4", "6", "8", "10", "12" }, 2);
+    add3<APF> (L, "fx_pha_spread", "Phaser Stereo", unit, 0.25f, percent());
+
+    add3<APF> (L, "fx_cho_hicut", "Chorus High Cut", skewed (1000.0f, 20000.0f, 6000.0f), 20000.0f, hertz());
+    add3<APF> (L, "fx_cho_spread", "Chorus Stereo", unit, 1.0f, percent());
+
+    add3<APF> (L, "fx_dly_lowcut", "Delay Low Cut", skewed (20.0f, 2000.0f, 200.0f), 20.0f, hertz());
+    add3<APF> (L, "fx_dly_offset", "Delay Stereo Offset", juce::NormalisableRange<float> (-0.5f, 0.5f), 0.0f, bipolarPercent());
+
+    add3<APB> (L, "fx_mb_on", "Multiband On", false);
+    add3<APF> (L, "fx_mb_depth", "Multiband Depth", unit, 1.0f, percent());
+    add3<APF> (L, "fx_mb_time", "Multiband Time", unit, 0.5f, percent());
+    add3<APF> (L, "fx_mb_up", "Multiband Upward", unit, 0.4f, percent());
+    add3<APF> (L, "fx_mb_down", "Multiband Downward", unit, 1.0f, percent());
+    add3<APF> (L, "fx_mb_low", "Multiband Low Gain", juce::NormalisableRange<float> (-18.0f, 18.0f), 0.0f, decibels());
+    add3<APF> (L, "fx_mb_mid", "Multiband Mid Gain", juce::NormalisableRange<float> (-18.0f, 18.0f), 0.0f, decibels());
+    add3<APF> (L, "fx_mb_high", "Multiband High Gain", juce::NormalisableRange<float> (-18.0f, 18.0f), 0.0f, decibels());
+    add3<APF> (L, "fx_mb_gain", "Multiband Output", juce::NormalisableRange<float> (-18.0f, 18.0f), 0.0f, decibels());
+
+    add3<APC> (L, "fx_eq_lowtype", "EQ Low Type", juce::StringArray { "Shelf", "Peak", "Low Cut" }, 0);
+    add3<APF> (L, "fx_eq_lowq", "EQ Low Q", skewed (0.3f, 8.0f, 1.0f), 0.7f, withLabel ("Q"));
+    add3<APC> (L, "fx_eq_hightype", "EQ High Type", juce::StringArray { "Shelf", "Peak", "High Cut" }, 0);
+    add3<APF> (L, "fx_eq_highq", "EQ High Q", skewed (0.3f, 8.0f, 1.0f), 0.7f, withLabel ("Q"));
+
+    add3<APB> (L, "fx_fil_on", "Filter On", false);
+    add3<APC> (L, "fx_fil_type", "Filter Type", fxFilterTypeNames(), 0);
+    add3<APF> (L, "fx_fil_cutoff", "Filter Cutoff", skewed (20.0f, 20000.0f, 1000.0f), 2000.0f, hertz());
+    add3<APF> (L, "fx_fil_res", "Filter Res", unit, 0.2f, percent());
+    add3<APF> (L, "fx_fil_drive", "Filter Drive", unit, 0.0f, percent());
+    add3<APF> (L, "fx_fil_stereo", "Filter Stereo", juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f, bipolarPercent());
+    add3<APF> (L, "fx_fil_mix", "Filter Mix", unit, 1.0f, percent());
+
+    add3<APC> (L, "fx_rev_mode", "Reverb Type", juce::StringArray { "Hall", "Plate", "Room" }, 0);
+    add3<APF> (L, "fx_rev_decay", "Reverb Decay", skewed (0.2f, 20.0f, 2.5f), 2.5f, seconds());
+    add3<APF> (L, "fx_rev_predelay", "Reverb Pre-delay", skewed (0.0f, 250.0f, 40.0f), 0.0f, withLabel ("ms"));
+    add3<APF> (L, "fx_rev_lowcut", "Reverb Low Cut", skewed (20.0f, 1000.0f, 150.0f), 20.0f, hertz());
+    add3<APF> (L, "fx_rev_hicut", "Reverb High Cut", skewed (1000.0f, 20000.0f, 6000.0f), 14000.0f, hertz());
 
     return L;
 }

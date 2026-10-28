@@ -58,6 +58,7 @@ public:
         bool followHost = true;            // play whenever FL Studio plays
         int octave = 0;                    // moves the whole progression, -3..3
         int invert = 0;                    // inverts every chord up or down, -4..4
+        int feel = cruzchords::FeelAny;    // shuffle: the mood it writes in
         float adventure = 0.3f;            // shuffle: 0 traditional .. 1 adventurous
         int shuffleBars = 4;               // shuffle length, 1..32 bars
         double chordEvery = 4.0;           // shuffle: beats per chord

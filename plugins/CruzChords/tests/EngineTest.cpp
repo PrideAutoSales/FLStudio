@@ -241,6 +241,74 @@ int main()
         check (shuffleProgression ({}, o).size() == 8, "4 bars with a chord every 2 beats makes 8 chords");
     }
 
+    // Feels: every feel, scale and setting stays in key, reads like song phrases and loops back.
+    {
+        bool allInKey = true, noOddChords = true, endsMove = true, phrasesRepeat = true;
+        int soulfulRich = 0, soulfulTotal = 0, upliftingPlain = 0, upliftingTotal = 0;
+        for (int scale = 0; scale < (int) scales().size(); ++scale)
+            for (int feel = 0; feel < numFeels; ++feel)
+                for (double adventure : { 0.0, 0.5, 1.0 })
+                    for (uint32_t seed = 1; seed <= 12; ++seed)
+                    {
+                        ShuffleOptions o;
+                        o.scale = scale;
+                        o.feel = feel;
+                        o.adventure = adventure;
+                        o.totalBeats = 32.0;
+                        o.chordBeats = 4.0;
+                        o.seed = seed;
+                        const auto out = shuffleProgression ({}, o);
+                        endsMove &= out.size() == 8 && out.back().offset != out.front().offset;
+                        if (adventure < 0.25)
+                            for (int i = 0; i < 3; ++i)
+                                phrasesRepeat &= out[(size_t) i + 4].offset == out[(size_t) i].offset;
+                        for (const auto& c : out)
+                        {
+                            allInKey &= chordInScale (scale, c.offset, c.type);
+                            const int triad = diatonicChordType (scale, degreeOfOffset (scale, c.offset), Triads);
+                            if (feel != FeelTense)
+                                noOddChords &= triad != Dim && triad != Aug;
+                            if (scale == 0 && adventure < 0.25 && feel == FeelSoulful)
+                            {
+                                ++soulfulTotal;
+                                soulfulRich += chordTypeInfo (c.type).count >= 4;
+                            }
+                            if (scale == 0 && adventure < 0.25 && feel == FeelUplifting)
+                            {
+                                ++upliftingTotal;
+                                upliftingPlain += chordTypeInfo (c.type).count == 3;
+                            }
+                        }
+                    }
+        check (allInKey, "every feel stays in the key (8 scales, 9 feels, 2592 shuffles)");
+        check (noOddChords, "no diminished or augmented chords unless the feel is Tense");
+        check (endsMove, "the last chord leads back instead of repeating the first");
+        check (phrasesRepeat, "traditional progressions repeat their main phrase with a new ending");
+        check (soulfulRich * 10 >= soulfulTotal * 9, "Soulful uses 7ths and richer chords");
+        check (upliftingPlain * 2 >= upliftingTotal, "Uplifting stays mostly plain at the traditional end");
+    }
+
+    // Locked chords shape what is written around them.
+    {
+        int goodLeadIns = 0, runs = 0;
+        for (uint32_t seed = 1; seed <= 200; ++seed)
+        {
+            auto current = parseProgression ("I I I I V I I I");
+            for (auto& c : current)
+                c.locked = false;
+            current[4].locked = true; // a V chord in bar 5
+            ShuffleOptions o;
+            o.scale = 0;
+            o.totalBeats = 32.0;
+            o.seed = seed;
+            const auto out = shuffleProgression (current, o);
+            ++runs;
+            const int before = degreeOfOffset (0, out[3].offset);
+            goodLeadIns += degreeTransition (false, before, 4) >= 2.0;
+        }
+        check (goodLeadIns * 10 >= runs * 8, "the chord before a locked chord leads into it naturally");
+    }
+
     // A 32-bar progression with fast gates plays to the end.
     {
         ShuffleOptions o;

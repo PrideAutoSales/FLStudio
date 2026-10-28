@@ -5,7 +5,7 @@ A chord progression instrument for FL Studio 20 and up (VST3 and AU, plugin code
 - Pick a key and scale and get the seven chords in it, as triads, 7ths or 9ths.
 - 55 factory progressions in House, Deep House, EDM, Future Bass, Melodic Techno, Afro House, Pop, Hip Hop, R&B, Lo-fi and Trap.
   They are written as roman numerals in `Source/Presets.h`, so they play in any key.
-- Shuffle writes a new progression in the key, from traditional to adventurous, up to 32 bars, and skips locked chords.
+- Shuffle writes a new progression in the key from a library of proven phrases, arranged like a song section, with a Feel (Uplifting, Emotional, Dark, Dreamy, Soulful, Chill, Epic, Tense) that picks the phrases and chord colours. Traditional to adventurous, up to 32 bars, and it writes around locked chords.
 - Whole-progression octave and inversion controls.
 - Edit every chord: root, type (27 chord types), length, inversion and octave. Smooth voice leading picks inversions automatically.
 - 14 rhythms, from sustained chords to house stabs, deep house grooves, pumping eighths, trance gates and arpeggios.

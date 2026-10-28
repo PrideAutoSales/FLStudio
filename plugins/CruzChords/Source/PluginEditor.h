@@ -148,9 +148,9 @@ private:
 
     // Shuffle and whole-progression controls.
     juce::TextButton shuffleButton { "Shuffle" };
-    juce::Label traditionalLabel, adventurousLabel, barsLabel, everyLabel, allLabel, allOctLabel, allInvLabel;
+    juce::Label feelLabel, traditionalLabel, adventurousLabel, barsLabel, everyLabel, allLabel, allOctLabel, allInvLabel;
     juce::Slider adventureSlider;
-    juce::ComboBox barsBox, everyBox;
+    juce::ComboBox feelBox, barsBox, everyBox;
     juce::TextButton allOctDown { "-" }, allOctUp { "+" }, allInvDown { "-" }, allInvUp { "+" };
     juce::Label allOctValue, allInvValue;
 
@@ -165,7 +165,7 @@ private:
     juce::Array<juce::File> pluginFiles;
     int selectedSlot = -1;
     juce::String stripInfo;
-    juce::Rectangle<int> padsTitle, stripTitle, feelTitle;
+    juce::Rectangle<int> padsTitle, stripTitle, soundTitle, stripHelpArea, stripInfoArea;
 
     cruz::EditorRedrawGuard redrawGuard { *this };
 

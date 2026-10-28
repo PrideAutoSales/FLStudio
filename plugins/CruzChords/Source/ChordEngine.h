@@ -746,9 +746,30 @@ private:
 };
 
 //==============================================================================
-// Shuffle: writes a new progression that stays inside the key. Locked chords
-// stay where they are. "adventure" runs from 0 (the most familiar moves and
-// plain chords) to 1 (unexpected moves and richer chords).
+// Shuffle: writes a new progression that stays inside the key.
+//
+// It works the way a songwriter does instead of picking chords one at a time:
+//  - Progressions are built from 4-chord phrases taken from a library of moves
+//    that are known to work (I V vi IV, i VI III VII, ii V I vi, ...). Each is
+//    tagged with the feels it suits and how common it is.
+//  - Phrases are arranged like a song section: a main phrase, the same phrase
+//    again with a new ending, a contrasting phrase that follows on from it, and
+//    a last phrase that turns back to the start so the loop flows.
+//  - The feel picks the phrases and the chord colours (plain triads for
+//    uplifting, 9ths and 11ths for soulful, ...). A chord keeps its colour
+//    wherever it comes back, so the progression sounds like one idea.
+//  - "adventure" runs from 0 (the most familiar phrases, plain chords, exact
+//    repeats) to 1 (rarer phrases, richer chords, chord substitutions).
+//  - Locked chords stay where they are. Many candidates are written and the
+//    one that fits around the locked chords best is kept.
+
+enum Feel { FeelAny, FeelUplifting, FeelEmotional, FeelDark, FeelDreamy, FeelSoulful, FeelChill, FeelEpic, FeelTense, numFeels };
+
+inline const char* feelName (int feel)
+{
+    static const char* names[] = { "Any feel", "Uplifting", "Emotional", "Dark", "Dreamy", "Soulful", "Chill", "Epic", "Tense" };
+    return names[std::clamp (feel, 0, (int) numFeels - 1)];
+}
 
 // True when every note of the chord is in the scale.
 inline bool chordInScale (int scaleIndex, int offset, int type)
@@ -766,7 +787,7 @@ inline bool isMinorFamily (int scaleIndex)
     return scaleDegreeOffset (scaleIndex, 2) == 3;
 }
 
-// How likely each scale degree is to follow another, for the familiar end of the slider.
+// How well one scale degree moves to another (higher is more natural).
 inline double degreeTransition (bool minor, int from, int to)
 {
     static const double majorTable[7][7] = {
@@ -794,146 +815,546 @@ inline double degreeTransition (bool minor, int from, int to)
     return minor ? minorTable[from][to] : majorTable[from][to];
 }
 
-// Chord types that fit on one degree, with how likely each is at this adventure level.
-inline std::vector<std::pair<int, double>> chordChoices (int scaleIndex, int degree, double adventure)
+//==============================================================================
+// The phrase library
+
+struct PhraseCell
+{
+    const char* degrees; // four scale degrees, 1..7
+    bool minor;          // written for minor-key (true) or major-key (false) scales
+    int scale;           // -1 for any scale of that kind, or the one mode it is the signature sound of
+    unsigned feels;      // one bit per Feel
+    double common;       // 1 = rare .. 5 = in countless songs
+};
+
+namespace feelbits
+{
+inline constexpr unsigned U = 1u << FeelUplifting, E = 1u << FeelEmotional, D = 1u << FeelDark, R = 1u << FeelDreamy,
+                          S = 1u << FeelSoulful, C = 1u << FeelChill, P = 1u << FeelEpic, T = 1u << FeelTense;
+}
+
+inline const std::vector<PhraseCell>& phraseCells()
+{
+    using namespace feelbits;
+    // Scale indexes for the modal phrases: 2 Dorian, 3 Phrygian, 4 Lydian, 5 Mixolydian.
+    static const std::vector<PhraseCell> cells {
+        // Major keys
+        { "1 5 6 4", false, -1, U | E | P, 5 },
+        { "6 4 1 5", false, -1, E | P | U, 5 },
+        { "1 6 4 5", false, -1, U, 4 },
+        { "4 1 5 6", false, -1, E | P, 4 },
+        { "4 5 3 6", false, -1, E | R | S, 4 },
+        { "2 5 1 6", false, -1, S | C, 4 },
+        { "1 6 2 5", false, -1, S | C | U, 4 },
+        { "1 4 6 5", false, -1, U | E, 3 },
+        { "1 4 1 5", false, -1, U, 3 },
+        { "1 4 5 4", false, -1, U | P, 3 },
+        { "1 5 6 3", false, -1, E | R, 3 },
+        { "4 1 4 5", false, -1, E | R | U, 3 },
+        { "1 3 4 5", false, -1, U | R, 3 },
+        { "1 3 6 4", false, -1, E | R, 3 },
+        { "6 4 5 1", false, -1, E | U, 3 },
+        { "6 2 5 1", false, -1, S | C, 3 },
+        { "2 5 1 1", false, -1, S | C, 3 },
+        { "4 3 2 1", false, -1, R | C | S, 3 },
+        { "6 3 4 1", false, -1, E | D, 3 },
+        { "6 5 4 5", false, -1, E | D | P, 3 },
+        { "2 4 1 5", false, -1, C | S | R, 2 },
+        { "3 6 2 5", false, -1, S | C, 2 },
+        { "6 4 5 3", false, -1, E | D, 2 },
+        { "6 5 4 3", false, -1, D | E | R, 2 },
+        { "3 6 4 5", false, -1, E, 2 },
+        { "1 4 1 4", false, -1, R | C, 2 },
+        { "4 5 6 5", false, -1, E | P, 2 },
+        { "6 1 5 4", false, -1, P | E, 2 },
+        { "1 2 4 5", false, -1, U | R, 2 },
+        { "2 3 4 5", false, -1, T | P, 2 },
+        { "4 4 6 5", false, -1, E | D, 2 },
+        { "1 5 2 4", false, -1, U | C, 2 },
+        { "2 6 4 5", false, -1, C | S | E, 2 },
+        { "6 7 1 5", false, -1, T, 1 },
+        { "4 7 3 6", false, -1, S | T, 1 },
+
+        // Minor keys
+        { "1 6 3 7", true, -1, E | P | D, 5 },
+        { "1 7 6 7", true, -1, D | P, 4 },
+        { "1 6 7 1", true, -1, P | D | E, 4 },
+        { "6 7 1 1", true, -1, E | P, 4 },
+        { "1 4 7 3", true, -1, E | S | C, 4 },
+        { "1 7 6 5", true, -1, D | T, 4 },
+        { "1 4 6 5", true, -1, D | T, 3 },
+        { "1 4 5 1", true, -1, D, 3 },
+        { "1 3 7 4", true, -1, E | C, 3 },
+        { "1 6 4 5", true, -1, D | T, 3 },
+        { "4 7 3 6", true, -1, S | C | R, 3 },
+        { "6 3 7 1", true, -1, E | U | P, 3 },
+        { "6 7 5 1", true, -1, E | D, 2 },
+        { "1 7 4 6", true, -1, C | E, 2 },
+        { "4 5 6 7", true, -1, T | P, 2 },
+        { "1 3 4 6", true, -1, E | R, 2 },
+        { "1 3 6 4", true, -1, R | E, 2 },
+        { "1 1 6 7", true, -1, D | P, 2 },
+        { "1 4 1 5", true, -1, D, 2 },
+        { "1 4 1 4", true, -1, C | R | D, 2 },
+        { "1 7 1 7", true, -1, C | D, 2 },
+        { "4 1 6 7", true, -1, E | D, 2 },
+        { "6 4 1 5", true, -1, D | E | T, 2 },
+        { "2 5 1 1", true, -1, S | T, 1 },
+        { "1 6 2 5", true, -1, S | T | D, 1 },
+        { "6 3 4 1", true, -1, R | E, 1 },
+
+        // Signature sounds of the modes
+        { "1 4 1 4", true, 2, D | C | S | R, 4 },   // Dorian i IV
+        { "1 7 4 4", true, 2, C | D | E, 3 },       // i bVII IV
+        { "1 2 3 4", true, 2, R | S | T, 2 },       // i ii bIII IV
+        { "1 4 7 1", true, 2, C | D | S, 2 },
+        { "1 2 1 2", true, 3, D | T | P, 4 },       // Phrygian i bII
+        { "1 2 7 1", true, 3, D | T, 3 },
+        { "1 7 6 2", true, 3, D | P | T, 2 },
+        { "1 2 1 2", false, 4, R | U | E, 4 },      // Lydian I II
+        { "1 2 5 1", false, 4, R | U, 3 },
+        { "1 2 6 5", false, 4, R | E, 2 },
+        { "1 7 4 1", false, 5, U | P | C, 4 },      // Mixolydian I bVII IV
+        { "1 5 7 4", false, 5, U | C | D, 3 },
+        { "4 7 1 1", false, 5, P | U, 2 },
+    };
+    return cells;
+}
+
+inline std::array<int, 4> cellDegrees (const PhraseCell& c)
+{
+    std::array<int, 4> d {};
+    int n = 0;
+    for (const char* p = c.degrees; *p != 0 && n < 4; ++p)
+        if (*p >= '1' && *p <= '7')
+            d[(size_t) n++] = *p - '1';
+    return d;
+}
+
+//==============================================================================
+// Chord colours for each feel
+
+// 0 for plain triads, rising to 1 for the densest chords.
+inline double chordRichness (int type)
+{
+    switch (type)
+    {
+        case Major: case Minor: case Dim: case Aug: case Power: return 0.0;
+        case Maj7: case Dom7: case Min7: case HalfDim7: case Dim7: case Six: case Min6: case MinMaj7: case AugMaj7: return 0.3;
+        case Sus2: case Sus4: case Add9: case MinAdd9: return 0.5;
+        case Maj9: case Dom9: case Min9: case Dom7Sus4: case SixNine: case HalfDim9: return 0.8;
+        default: return 1.0;
+    }
+}
+
+// Candidate chord types for a degree whose plain triad is "triad", for one feel.
+inline std::vector<std::pair<int, double>> feelColours (int feel, int triad)
+{
+    using V = std::vector<std::pair<int, double>>;
+    if (triad == Dim)
+    {
+        switch (feel)
+        {
+            case FeelSoulful: case FeelChill: case FeelDreamy: return V { { HalfDim7, 3 }, { HalfDim9, 2 }, { Dim, 0.3 } };
+            case FeelTense: return V { { Dim, 2 }, { Dim7, 2 }, { HalfDim7, 2 } };
+            case FeelDark: return V { { Dim, 3 }, { HalfDim7, 1 } };
+            default: return V { { Dim, 2 }, { HalfDim7, 2 } };
+        }
+    }
+    if (triad == Aug)
+        return V { { Aug, 2 }, { AugMaj7, 1.5 } };
+
+    if (triad == Major)
+    {
+        switch (feel)
+        {
+            case FeelUplifting: return V { { Major, 6 }, { Add9, 2.5 }, { Sus2, 1.2 }, { Sus4, 1.2 }, { Maj7, 0.6 }, { Dom7, 0.5 }, { Six, 0.4 }, { SixNine, 0.4 } };
+            case FeelEmotional: return V { { Major, 3 }, { Add9, 3 }, { Maj7, 2.5 }, { Sus2, 1.5 }, { Sus4, 1.2 }, { Maj9, 1 }, { Dom7Sus4, 0.6 } };
+            case FeelDark: return V { { Major, 5 }, { Power, 1.5 }, { Sus2, 1.2 }, { Sus4, 1 }, { Add9, 0.5 }, { Maj7, 0.4 } };
+            case FeelDreamy: return V { { Maj7, 4 }, { Maj9, 3.5 }, { Add9, 3 }, { Sus2, 2 }, { SixNine, 1.5 }, { Major, 0.6 } };
+            case FeelSoulful: return V { { Maj9, 4 }, { Maj7, 2.5 }, { Dom9, 4 }, { Dom7, 1.5 }, { SixNine, 2 }, { Dom7Sus4, 2 }, { Six, 1 } };
+            case FeelChill: return V { { Maj7, 4 }, { Maj9, 2.5 }, { Dom9, 2.5 }, { Dom7, 1.5 }, { Six, 1.5 }, { Add9, 1.5 }, { SixNine, 1 } };
+            case FeelEpic: return V { { Major, 5 }, { Power, 2 }, { Sus4, 2 }, { Sus2, 2 }, { Add9, 1.2 } };
+            case FeelTense: return V { { Major, 3 }, { Sus4, 3 }, { Dom7, 3 }, { Dom7Sus4, 2 }, { Dom7b9, 2 }, { Sus2, 1 } };
+            default: return V { { Major, 6 }, { Maj7, 0.8 }, { Dom7, 1 }, { Add9, 0.8 }, { Sus2, 0.5 }, { Sus4, 0.6 }, { Maj9, 0.5 }, { Dom9, 0.4 }, { Dom7Sus4, 0.4 }, { SixNine, 0.2 }, { Six, 0.2 } };
+        }
+    }
+
+    switch (feel)
+    {
+        case FeelUplifting: return V { { Minor, 6 }, { Min7, 1.5 }, { MinAdd9, 1 }, { Sus4, 0.8 }, { Sus2, 0.6 } };
+        case FeelEmotional: return V { { Minor, 3 }, { Min7, 3 }, { MinAdd9, 3 }, { Min9, 1.5 }, { Sus2, 0.8 } };
+        case FeelDark: return V { { Minor, 6 }, { MinAdd9, 1.2 }, { Power, 1.5 }, { Min7, 0.6 }, { Sus2, 0.6 }, { Min6, 0.5 } };
+        case FeelDreamy: return V { { Min9, 3.5 }, { Min7, 3 }, { MinAdd9, 3 }, { Min11, 2 }, { Sus2, 1.5 } };
+        case FeelSoulful: return V { { Min9, 4 }, { Min11, 3.5 }, { Min7, 3 }, { Min6, 1 } };
+        case FeelChill: return V { { Min7, 4 }, { Min9, 3.5 }, { Min11, 2 }, { MinAdd9, 1 } };
+        case FeelEpic: return V { { Minor, 5 }, { Power, 2 }, { MinAdd9, 1.5 }, { Sus4, 1.2 }, { Sus2, 1.2 } };
+        case FeelTense: return V { { Minor, 3 }, { MinMaj7, 2.5 }, { Min7, 1 }, { Sus4, 1.5 }, { Min7b9, 1 }, { Min6, 0.8 } };
+        default: return V { { Minor, 6 }, { Min7, 1.2 }, { MinAdd9, 0.6 }, { Min9, 0.4 }, { Min11, 0.2 }, { Sus2, 0.3 }, { Sus4, 0.4 } };
+    }
+}
+
+// The colours that fit on one degree of this scale, weighted for the feel and adventure.
+inline std::vector<std::pair<int, double>> colourChoices (int scaleIndex, int degree, int feel, double adventure)
 {
     const int offset = scaleDegreeOffset (scaleIndex, degree);
+    const int triad = diatonicChordType (scaleIndex, degree, Triads);
     const double a = std::clamp (adventure, 0.0, 1.0);
-    std::vector<std::pair<int, double>> out;
-    auto add = [&] (int type, double weight)
-    {
-        if (weight <= 0 || ! chordInScale (scaleIndex, offset, type))
-            return;
-        for (const auto& o : out)
-            if (o.first == type)
-                return;
-        out.push_back ({ type, weight });
-    };
 
-    add (diatonicChordType (scaleIndex, degree, Triads), 3.0 * (1.0 - a) + 0.4);
-    add (diatonicChordType (scaleIndex, degree, Sevenths), 0.6 + 1.6 * a);
-    add (diatonicChordType (scaleIndex, degree, Ninths), 2.4 * a * a);
-    add (Sus2, 1.2 * a);
-    add (Sus4, 1.2 * a);
-    add (Add9, 1.4 * a);
-    add (MinAdd9, 1.4 * a);
-    add (Min11, 1.2 * a * a);
-    add (Six, 0.6 * a);
-    add (Min6, 0.6 * a);
-    add (Dom7Sus4, 0.8 * a * a);
+    std::vector<std::pair<int, double>> out;
+    for (auto [type, w] : feelColours (feel, triad))
+    {
+        if (! chordInScale (scaleIndex, offset, type))
+            continue;
+        const double r = chordRichness (type);
+        w *= (1.0 - 0.85 * r * (1.0 - a)) * (1.0 + 1.5 * r * a);
+        if (feel == FeelAny && r >= 0.5)
+            w *= a; // with no feel chosen, the familiar end stays plain
+        if (degree == 0 && (type == Sus2 || type == Sus4))
+            w *= 0.35; // the home chord should sound like home
+        if (w > 0)
+            out.push_back ({ type, w });
+    }
     if (out.empty())
-        out.push_back ({ diatonicChordType (scaleIndex, degree, Triads), 1.0 });
+        out.push_back ({ triad, 1.0 });
     return out;
 }
+
+//==============================================================================
+// Writing a progression
 
 struct ShuffleOptions
 {
     int scale = 0;
+    int feel = FeelAny;
     double adventure = 0.3;
     double totalBeats = 16.0; // up to 32 bars = 128 beats
     double chordBeats = 4.0;  // how often the chord changes
     uint32_t seed = 1;
 };
 
-inline std::vector<Chord> shuffleProgression (const std::vector<Chord>& current, const ShuffleOptions& opt)
+namespace detail
 {
-    std::mt19937 rng (opt.seed);
-    auto pick = [&rng] (const std::vector<double>& weights)
+struct Rng
+{
+    explicit Rng (uint32_t seed) : gen (seed) {}
+
+    double uniform() { return std::uniform_real_distribution<double> (0.0, 1.0) (gen); }
+
+    template <typename Weights>
+    int pick (const Weights& weights)
     {
         double sum = 0;
         for (double w : weights)
-            sum += w;
-        double r = std::uniform_real_distribution<double> (0.0, sum) (rng);
+            sum += std::max (w, 0.0);
+        if (sum <= 0)
+            return 0;
+        double r = uniform() * sum;
+        int last = 0;
         for (size_t i = 0; i < weights.size(); ++i)
         {
+            if (weights[i] <= 0)
+                continue;
+            last = (int) i;
             r -= weights[i];
             if (r <= 0)
                 return (int) i;
         }
-        return (int) weights.size() - 1;
+        return last;
+    }
+
+    std::mt19937 gen;
+};
+
+// How usable a degree's chord is: diminished and augmented chords are rare in
+// pop and dance music, so phrases that lean on them are picked less.
+inline double degreeUsability (int scaleIndex, int degree, int feel)
+{
+    const int triad = diatonicChordType (scaleIndex, degree, Triads);
+    if (triad == Dim)
+        return feel == FeelTense ? 0.5 : 0.04;
+    if (triad == Aug)
+        return feel == FeelTense ? 0.3 : 0.02;
+    return 1.0;
+}
+
+// A chord that moves well from "from" (-1 for nothing before it) and leads well into "to".
+inline int bridgeDegree (const ShuffleOptions& opt, Rng& rng, int from, int to, int avoid, double toPower)
+{
+    const bool minor = isMinorFamily (opt.scale);
+    std::array<double, 7> w {};
+    for (int d = 0; d < 7; ++d)
+    {
+        if (d == avoid || d == from || d == to)
+            continue;
+        const double usable = degreeUsability (opt.scale, d, opt.feel);
+        if (usable < 1.0 && opt.feel != FeelTense)
+            continue;
+        w[(size_t) d] = (from >= 0 ? degreeTransition (minor, from, d) : 1.0) * std::pow (degreeTransition (minor, d, to), toPower) * usable;
+    }
+    return rng.pick (w);
+}
+
+// One whole progression as scale degrees, before colours and locks.
+inline std::vector<int> writeDegrees (int count, const ShuffleOptions& opt, Rng& rng)
+{
+    const double a = std::clamp (opt.adventure, 0.0, 1.0);
+    const bool minor = isMinorFamily (opt.scale);
+
+    // The phrases that suit this scale and feel, and how likely each is.
+    struct Choice
+    {
+        std::array<int, 4> d;
+        double weight;
+    };
+    std::vector<Choice> pool;
+    auto fill = [&] (bool requireFeel)
+    {
+        for (const auto& cell : phraseCells())
+        {
+            if (cell.minor != minor || (cell.scale >= 0 && cell.scale != opt.scale))
+                continue;
+            const bool fits = opt.feel == FeelAny || (cell.feels & (1u << opt.feel)) != 0;
+            if (requireFeel && ! fits)
+                continue;
+
+            Choice c { cellDegrees (cell), std::pow (cell.common, 2.5 - 3.0 * a) };
+            if (! fits)
+                c.weight *= 0.15;
+            if (cell.scale >= 0)
+                c.weight *= 3.0; // the mode's own sound
+
+            // A phrase written for another scale can land on a diminished or
+            // augmented chord here (vi in Dorian, VI in melodic minor). Swap it
+            // for the chord a third away, the way players substitute, so the
+            // phrase keeps its shape.
+            for (size_t i = 0; i < c.d.size(); ++i)
+            {
+                const int d = c.d[i];
+                if (opt.feel == FeelTense || degreeUsability (opt.scale, d, opt.feel) >= 1.0)
+                    continue;
+                const int first = d == 1 ? (d + 2) % 7 : (d + 5) % 7; // ii goes up to iv, others down (vii to V)
+                const int second = d == 1 ? (d + 5) % 7 : (d + 2) % 7;
+                if (degreeUsability (opt.scale, first, opt.feel) >= 1.0)
+                    c.d[i] = first;
+                else if (degreeUsability (opt.scale, second, opt.feel) >= 1.0)
+                    c.d[i] = second;
+            }
+            for (size_t i = 0; i < c.d.size(); ++i)
+            {
+                c.weight *= degreeUsability (opt.scale, c.d[i], opt.feel);
+                if (i > 0 && c.d[i] == c.d[i - 1] && cellDegrees (cell)[i] != cellDegrees (cell)[i - 1])
+                    c.weight *= 0.5; // the swap made a chord repeat
+            }
+            if (c.weight > 1.0e-6)
+                pool.push_back (c);
+        }
+    };
+    fill (true);
+    if (pool.size() < 4)
+    {
+        pool.clear();
+        fill (false);
+    }
+
+    auto tr = [&] (int from, int to) { return degreeTransition (minor, from, to); };
+
+    auto pickPhrase = [&] (const std::vector<std::array<int, 4>>& avoid, int after, int before)
+    {
+        std::vector<double> w;
+        for (const auto& c : pool)
+        {
+            double x = c.weight;
+            for (const auto& other : avoid)
+            {
+                if (c.d == other)
+                    x *= 0.001;
+                else if (c.d[0] == other[0])
+                    x *= 0.25; // a contrasting phrase starts somewhere new
+            }
+            if (after >= 0)
+                x *= 0.2 + tr (after, c.d[0]);
+            if (before >= 0)
+                x *= 0.2 + tr (c.d[3], before);
+            w.push_back (x);
+        }
+        return pool[(size_t) rng.pick (w)].d;
     };
 
+
+    // The substitute a third away (I for vi, IV for ii, ...), if it is a usable chord.
+    auto substitute = [&] (int d)
+    {
+        const int s = (d + (rng.uniform() < 0.5 ? 2 : 5)) % 7;
+        return degreeUsability (opt.scale, s, opt.feel) >= 1.0 ? s : d;
+    };
+
+    const int phraseLen = std::min (count, 4);
+    const int numPhrases = (count + phraseLen - 1) / phraseLen;
+
+    const auto A = pickPhrase ({}, -1, -1);
+    const auto B = pickPhrase ({ A }, A[3], A[0]);
+    const auto C = pickPhrase ({ A, B }, A[3], A[0]);
+
+    // Song-like order: A, A again with a new ending, a contrasting B, A again.
+    // Every other group of four uses C instead of B once it gets adventurous.
+    auto isContrast = [&] (int p) { return numPhrases == 3 ? p == 1 : (numPhrases >= 4 && p % 4 == 2); };
+    auto sectionOf = [&] (int p)
+    {
+        if (! isContrast (p))
+            return A;
+        return ((p / 4) % 2 == 1 && a > 0.25) ? C : B;
+    };
+
+    std::vector<int> out;
+    for (int p = 0; p < numPhrases; ++p)
+    {
+        const bool lastPhrase = p == numPhrases - 1;
+        auto phrase = sectionOf (p);
+
+        if (! isContrast (p) && p % 4 != 0)
+        {
+            // Adventurous repeats swap a middle chord for a close relative.
+            if (rng.uniform() < (a - 0.45) * 1.4)
+            {
+                const size_t i = 1 + (size_t) (rng.uniform() * 2.0);
+                const int s = substitute (phrase[i]);
+                if (s != phrase[i - 1] && s != phrase[i + 1])
+                    phrase[i] = s;
+            }
+            // Repeats get a new ending: often at the familiar end, always at the adventurous end.
+            if (rng.uniform() < 0.45 + 0.55 * a)
+            {
+                const int next = lastPhrase ? out.front() : sectionOf (p + 1)[0];
+                phrase[3] = bridgeDegree (opt, rng, phrase[2], next, A[3], 1.0);
+            }
+        }
+
+        for (int i = 0; i < phraseLen && (int) out.size() < count; ++i)
+            out.push_back (phrase[(size_t) i]);
+
+        // The end of the whole progression turns back to its start.
+        if (lastPhrase && count >= 2)
+        {
+            const int first = out.front();
+            int& end = out.back();
+            const int before = out[out.size() - 2];
+            if (end == first || tr (end, first) < 2.5)
+                end = bridgeDegree (opt, rng, before, first, -1, 2.0);
+        }
+    }
+    return out;
+}
+} // namespace detail
+
+inline std::vector<Chord> shuffleProgression (const std::vector<Chord>& current, const ShuffleOptions& opt)
+{
+    detail::Rng rng (opt.seed);
     const double a = std::clamp (opt.adventure, 0.0, 1.0);
     const bool minor = isMinorFamily (opt.scale);
     const double chordBeats = std::max (1.0, opt.chordBeats);
     const int count = std::clamp ((int) std::lround (opt.totalBeats / chordBeats), 1, (int) Sequence::maxSlots);
 
-    // Start from the grid, keeping locked chords at their positions.
-    std::vector<Chord> out ((size_t) count);
-    std::vector<bool> locked ((size_t) count, false);
+    // Locked chords, by position, as scale degrees (-1 when outside the scale).
+    std::vector<int> lockedDegree ((size_t) count, -2);
+    bool anyLocked = false;
+    for (int i = 0; i < count && i < (int) current.size(); ++i)
+        if (current[(size_t) i].locked)
+        {
+            lockedDegree[(size_t) i] = degreeOfOffset (opt.scale, current[(size_t) i].offset);
+            anyLocked = true;
+        }
+
+    std::vector<int> currentDegrees;
+    for (const auto& c : current)
+        currentDegrees.push_back (degreeOfOffset (opt.scale, c.offset));
+
+    // Write candidates and keep the one that sits best around the locked chords
+    // and differs from what is there now.
+    std::vector<int> best;
+    double bestScore = -1.0e9;
+    const int candidates = anyLocked ? 64 : 8;
+    for (int k = 0; k < candidates; ++k)
+    {
+        auto degrees = detail::writeDegrees (count, opt, rng);
+        double score = rng.uniform() * 0.5;
+        for (int i = 0; i < count; ++i)
+        {
+            const int ld = lockedDegree[(size_t) i];
+            if (ld < 0)
+                continue;
+            degrees[(size_t) i] = ld;
+            if (i > 0 && lockedDegree[(size_t) i - 1] == -2)
+                score += std::log (0.1 + degreeTransition (minor, degrees[(size_t) i - 1], ld));
+            if (i + 1 < count && lockedDegree[(size_t) i + 1] == -2)
+                score += std::log (0.1 + degreeTransition (minor, ld, degrees[(size_t) i + 1]));
+        }
+        for (int i = 1; i < count; ++i)
+            if (degrees[(size_t) i] == degrees[(size_t) i - 1] && lockedDegree[(size_t) i] != -2)
+                score -= 1.0; // a locked chord next to the same chord just sounds held
+        if (degrees == currentDegrees)
+            score -= 5.0;
+        if (score > bestScore)
+        {
+            bestScore = score;
+            best = degrees;
+        }
+    }
+
+    // Smooth the joins the candidates could not: the chord before a locked
+    // chord should lead into it, and the one after should follow on from it.
     for (int i = 0; i < count; ++i)
     {
-        out[(size_t) i].beats = chordBeats;
-        if (i < (int) current.size() && current[(size_t) i].locked)
+        const int ld = lockedDegree[(size_t) i];
+        if (ld < 0)
+            continue;
+        if (i > 0 && lockedDegree[(size_t) i - 1] == -2 && degreeTransition (minor, best[(size_t) i - 1], ld) < 2.0)
+            best[(size_t) i - 1] = detail::bridgeDegree (opt, rng, i > 1 ? best[(size_t) i - 2] : -1, ld, -1, 2.0);
+        if (i + 1 < count && lockedDegree[(size_t) i + 1] == -2 && degreeTransition (minor, ld, best[(size_t) i + 1]) < 1.0)
+            best[(size_t) i + 1] = detail::bridgeDegree (opt, rng, ld, best[(size_t) (i + 2) % (size_t) count], -1, 1.0);
+    }
+
+    // One colour per degree, so a chord sounds the same each time it comes back.
+    std::array<int, 7> colour {};
+    for (int d = 0; d < 7; ++d)
+    {
+        const auto choices = colourChoices (opt.scale, d, opt.feel, a);
+        std::vector<double> w;
+        for (const auto& c : choices)
+            w.push_back (c.second);
+        colour[(size_t) d] = choices[(size_t) rng.pick (w)].first;
+    }
+
+    std::vector<Chord> out ((size_t) count);
+    for (int i = 0; i < count; ++i)
+    {
+        if (lockedDegree[(size_t) i] != -2)
         {
             out[(size_t) i] = current[(size_t) i];
             out[(size_t) i].beats = chordBeats; // keeps its chord, follows the new grid
-            locked[(size_t) i] = true;
-        }
-    }
-
-    auto degreeOf = [&] (const Chord& c)
-    {
-        const int d = degreeOfOffset (opt.scale, c.offset);
-        return d < 0 ? 0 : d;
-    };
-
-    int prev = -1;
-    for (int i = 0; i < count; ++i)
-    {
-        if (locked[(size_t) i])
-        {
-            prev = degreeOf (out[(size_t) i]);
             continue;
         }
 
-        // The next locked chord, if it comes right after this one.
-        const int nextLocked = (i + 1 < count && locked[(size_t) i + 1]) ? degreeOf (out[(size_t) i + 1]) : -1;
-        const bool last = i == count - 1;
-        const int first = locked[0] ? degreeOf (out[0]) : 0;
-
-        std::vector<double> weights (7);
-        for (int d = 0; d < 7; ++d)
-        {
-            double w;
-            if (prev < 0)
-            {
-                // Familiar progressions start at home; adventurous ones anywhere.
-                w = d == 0 ? 6.0 * (1.0 - a) + 1.0 : 0.3 + 1.5 * a;
-            }
-            else
-            {
-                const double familiar = degreeTransition (minor, prev, d);
-                w = (1.0 - a) * familiar + a * (d == prev ? 0.15 : 1.5);
-                // Adventurous: favour the moves the familiar table rarely makes.
-                if (a > 0.5 && familiar < 1.0 && d != prev)
-                    w += (a - 0.5) * 2.0;
-            }
-
-            if (nextLocked >= 0)
-                w *= degreeTransition (minor, d, nextLocked) * (1.0 - a) + 1.0 * a + 0.2;
-            if (last && count > 1)
-                w *= degreeTransition (minor, d, first) * (1.0 - a) * 0.5 + 1.0;
-            if (diatonicChordType (opt.scale, d, Triads) == Dim)
-                w *= 0.1 + 0.4 * a; // diminished chords are rare in pop and dance music
-            weights[(size_t) d] = std::max (w, 0.0);
-        }
-
-        const int degree = pick (weights);
-        const auto choices = chordChoices (opt.scale, degree, a);
-        std::vector<double> typeWeights;
-        for (const auto& c : choices)
-            typeWeights.push_back (c.second);
-
+        const int d = best[(size_t) i];
         Chord c;
-        c.offset = scaleDegreeOffset (opt.scale, degree);
-        c.type = choices[(size_t) pick (typeWeights)].first;
+        c.offset = scaleDegreeOffset (opt.scale, d);
+        c.type = colour[(size_t) d];
+
+        // Now and then, an adventurous progression colours a chord differently on its way back.
+        if (a > 0.4 && i >= 4 && rng.uniform() < (a - 0.4) * 0.35)
+        {
+            const auto choices = colourChoices (opt.scale, d, opt.feel, a);
+            std::vector<double> w;
+            for (const auto& ch : choices)
+                w.push_back (ch.second);
+            c.type = choices[(size_t) rng.pick (w)].first;
+        }
         c.beats = chordBeats;
         out[(size_t) i] = c;
-        prev = degree;
     }
     return out;
 }
+
 
 //==============================================================================
 // One key plays a whole chord: notes in the scale play the chord built on

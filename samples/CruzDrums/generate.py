@@ -49,12 +49,15 @@ def measure(x):
     hf = signal.sosfilt(signal.butter(2, 8000 / (SR / 2), "hp", output="sos"), mono)
     hf_spike = np.max(np.abs(hf[int(0.05 * n):])) / (np.max(np.abs(mono)) + 1e-12) if n > 2000 else 0
     rms = np.sqrt(np.mean(mono[: min(n, int(0.1 * SR))] ** 2))
+    w = int(0.025 * SR)
+    blocks = [db(np.sqrt(np.mean(mono[i:i + w] ** 2))) for i in range(0, n - w, w)]
+    late = max(blocks[-3:]) - min(blocks[:-3]) if len(blocks) > 4 else -99
     return dict(
         length=n / SR, true_peak_db=db(tp), sample_peak_db=db(np.max(np.abs(x))),
         dc=float(np.max(np.abs(x.mean(axis=1)))), start=float(np.max(np.abs(x[:, 0]))),
         end_db=db(np.sqrt(np.mean(x[:, -96:] ** 2))), t20=t20, centroid=centroid, flatness=flat,
         dominant=dom, crest_db=db(np.max(np.abs(mono)) / (np.sqrt(np.mean(mono ** 2)) + 1e-12)),
-        rms100_db=db(rms), channels=x.shape[0], hf_spike=hf_spike,
+        rms100_db=db(rms), channels=x.shape[0], hf_spike=hf_spike, late_rise=late,
     )
 
 
@@ -70,11 +73,13 @@ def qa(m, kind):
         fails.append("start click")
     if m["end_db"] > -50:
         fails.append("end click")
+    if m["late_rise"] > 10:
+        fails.append("late burst")
     if m["length"] < 0.03:
         fails.append("too short")
     if kind == "Kicks" and m["dominant"] > 120:
         fails.append("kick lacks low end")
-    if kind in ("Kicks", "Snares", "Claps") and m["rms100_db"] < -24:
+    if kind in ("Kicks", "Snares", "Claps") and m["rms100_db"] < -20:
         fails.append("weak")
     if kind == "Hats" and m["centroid"] < 4000:
         fails.append("dull hat")
@@ -105,12 +110,36 @@ def pick(cands, keep):
         c["z"] = f
     chosen = []
     for g, v in groups.items():
+        if quota[g] == 0:
+            continue
         sel = [min(v, key=lambda c: np.sum(c["z"] ** 2))]
         while len(sel) < min(quota[g], len(v)):
             rest = [c for c in v if all(c is not s for s in sel)]
             sel.append(max(rest, key=lambda c: min(np.sum((c["z"] - s["z"]) ** 2) for s in sel + chosen)))
         chosen += sel
     return chosen
+
+
+def describe(chosen, kind):
+    """Add tone and length words, ranked within the folder so each name says how it differs."""
+    if len(chosen) < 3:
+        return
+    cen = np.array([c["m"]["centroid"] for c in chosen])
+    t20 = np.array([c["m"]["t20"] for c in chosen])
+    lo_c, hi_c = np.percentile(cen, [30, 70])
+    lo_t, hi_t = np.percentile(t20, [30, 70])
+    dark, bright = ("Deep", "Knocky") if kind == "Kicks" else ("Dark", "Crisp")
+    for c in chosen:
+        extra = []
+        if c["m"]["centroid"] <= lo_c:
+            extra.append(dark)
+        elif c["m"]["centroid"] >= hi_c:
+            extra.append(bright)
+        if c["m"]["t20"] <= lo_t:
+            extra.append("Tight")
+        elif c["m"]["t20"] >= hi_t:
+            extra.append("Long" if kind != "Kicks" or "808" not in c["words"] else "")
+        c["words"] = [c["words"][0]] + [w for w in extra if w and w not in c["words"]] + c["words"][1:]
 
 
 def build(args):
@@ -128,10 +157,11 @@ def build(args):
         if fails:
             rejected.append((i, fails))
             continue
-        group = words[0] if kind in ("Hats", "Percs", "Rims") else ("808" if words[0] == "808" else "kick")
+        group = words[0]
         cands.append(dict(x=x, words=words, note=note, m=m, feat=features(m), group=group, i=i))
     chosen = pick(cands, KEEP) if len(cands) > KEEP else cands
     chosen.sort(key=lambda c: (c["group"], c["m"]["dominant"]))
+    describe(chosen, kind)
     rows = []
     folder = os.path.join(out, genre, kind)
     os.makedirs(folder, exist_ok=True)

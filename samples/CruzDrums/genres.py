@@ -1,105 +1,113 @@
-"""Cruz Drums: the sound of each genre, as ranges the voices pick from.
+"""Cruz Drums: each genre as recipe weights and processing ranges.
 
-The targets follow what the best-selling one-shot packs in each style have in common:
-house kicks short and tuned with a click, trap 808s long with drive and hats tight and
-bright, boom bap dusty and sampler-crunched, pop clean and wide, disco and funk live and
-taped, drum and bass tight kicks with high cracking snares.
+Version 2 is built around the hard-knocking, textured hip hop kit sound: layered
+organic sources (skins, wires, hands, tables, boxes, mouths, found objects) pushed
+through console-style clipping, distort-EQ-distort, compression and small rooms,
+then mastered loud without digital clipping. Each genre bends that sound its own way.
 """
 
-HOUSE = dict(
-    kick_notes=(31, 37), kick_decay=(0.26, 0.55), kick_sweep=(3.5, 6.5), kick_tau=(0.010, 0.028),
-    kick_click=(0.15, 0.7), kick_drive=(1.4, 3.6),
-    snare_tone=(190, 260), snare_noise_decay=(0.14, 0.3), snare_hp=(1500, 3000), snare_drive=(1.2, 2.2),
-    snare_room=(0.08, 0.3), snare_clap=0.3,
-    clap_center=(1000, 1700), clap_tail=(0.12, 0.3), clap_layers=(1, 3), clap_room=(0.12, 0.35),
-    rim_kinds=["808", "click", "808", "wood"],
-    hat_metal=(0.5, 0.85), hat_scale=(1.0, 1.6), hat_closed=(0.04, 0.1), hat_open=(0.3, 0.6), open_frac=0.4,
-    percs=["conga", "bongo", "cowbell", "shaker", "woodblock", "tick", "tambourine", "tom", "clave", "agogo"],
-)
-
 HIPHOP = dict(
-    kick_notes=(29, 35), kick_decay=(0.35, 0.7), kick_sweep=(3.0, 5.5), kick_tau=(0.012, 0.03),
-    kick_click=(0.05, 0.45), kick_drive=(2.0, 4.2),
-    kick_808=0.25, kick_808_notes=(26, 34), kick_808_decay=(1.0, 1.8), kick_808_drive=(2.0, 4.0),
-    snare_tone=(165, 230), snare_noise_decay=(0.18, 0.36), snare_hp=(1200, 2500), snare_drive=(1.5, 3.0),
-    snare_room=(0.15, 0.4), snare_clap=0.4,
-    clap_center=(950, 1500), clap_tail=(0.15, 0.32), clap_layers=(2, 4), clap_room=(0.15, 0.4),
-    hat_metal=(0.4, 0.75), hat_closed=(0.03, 0.08), hat_open=(0.25, 0.5), open_frac=0.3,
-    percs=["snap", "conga", "tom", "shaker", "woodblock", "metal", "pluck", "tambourine", "bongo", "timbale"],
+    kick={"Knock": 4, "Slam": 2, "Box": 1, "Mouth": 1, "808": 2, "Thump": 1},
+    kick_notes=(29, 36), kick_decay=(0.3, 0.6), k808_decay=(1.0, 1.8),
+    snare={"Layered": 3, "Clapper": 2, "Slam": 2, "Acoustic": 1, "Box": 1, "Mouth": 1, "Crack": 1},
+    snare_tune=(165, 235), snare_room=(0.1, 0.35),
+    clap={"Group": 2, "Snap Stack": 2, "Slap": 1, "Tight": 1, "Mouth": 1},
+    rim={"Rimshot": 2, "Cross Stick": 2, "Knuckle": 1, "Glass": 1, "Can": 1, "Stick Click": 1, "Tongue": 1},
+    hat={"Closed": 4, "Open": 2, "Pedal": 1, "Shaker": 1, "Mouth": 1, "Keys": 1, "Sizzle": 1},
+    percs=["Snap", "Knuckle", "Can", "Shaker", "Tongue Click", "Bottle", "Conga", "Paper", "Box Tap", "Tambourine", "Lip Pop"],
+    drive1=(2.0, 4.5), drive2=(1.5, 3.0), presence=(2, 6), clip=(1.3, 1.9), grit=(0.004, 0.012),
+    varispeed=(0.85, 0.97), varispeed_p=0.5,
 )
 
 TRAP = dict(
-    kick_notes=(30, 36), kick_decay=(0.22, 0.45), kick_sweep=(4.5, 8.0), kick_tau=(0.008, 0.02),
-    kick_click=(0.4, 0.9), kick_drive=(2.5, 5.0),
-    kick_808=0.5, kick_808_notes=(24, 34), kick_808_decay=(1.3, 2.6), kick_808_drive=(2.0, 6.0),
-    snare_tone=(200, 285), snare_noise_decay=(0.14, 0.3), snare_hp=(2000, 4000), snare_drive=(1.8, 3.2),
-    snare_room=(0.1, 0.32), snare_clap=0.5,
-    clap_center=(1200, 2000), clap_tail=(0.14, 0.32), clap_layers=(2, 5), clap_room=(0.2, 0.5),
-    clap_drive=(1.3, 2.6),
-    rim_kinds=["808", "click", "808", "wood"],
-    hat_metal=(0.6, 0.9), hat_scale=(1.2, 1.8), hat_hp=(7000, 9000), hat_closed=(0.02, 0.05),
-    hat_open=(0.2, 0.45), open_frac=0.3, hat_drive=(1.2, 2.2),
-    percs=["pluck", "metal", "snap", "zap", "woodblock", "tom", "shaker", "clave", "triangle", "cowbell"],
+    kick={"808": 5, "Knock": 3, "Punch": 2, "Slam": 1},
+    kick_notes=(25, 35), kick_decay=(0.25, 0.45), k808_decay=(1.3, 2.4),
+    snare={"Crack": 3, "Clapper": 3, "Layered": 2, "Slam": 1, "Mouth": 1},
+    snare_tune=(200, 270), snare_room=(0.1, 0.3),
+    clap={"Snap Stack": 3, "Group": 2, "Tight": 1, "Slap": 1},
+    rim={"Rimshot": 2, "Stick Click": 2, "Glass": 1, "Can": 1, "Tongue": 1, "Cross Stick": 1},
+    hat={"Closed": 6, "Open": 2, "Keys": 1, "Mouth": 1, "Sizzle": 1},
+    hat_closed=(0.02, 0.05), hat_open=(0.25, 0.5),
+    percs=["Snap", "Can", "Bottle", "Tongue Click", "Keys", "Woodblock", "Tom", "Paper", "Knuckle", "Lip Pop", "Triangle"],
+    drive1=(2.0, 5.0), drive2=(1.5, 3.5), presence=(3, 7), clip=(1.3, 2.0), grit=(0.002, 0.006),
 )
 
 BOOMBAP = dict(
-    kick_notes=(31, 39), kick_decay=(0.24, 0.45), kick_sweep=(2.5, 4.5), kick_tau=(0.018, 0.04),
-    kick_click=(0.1, 0.5), kick_drive=(2.0, 4.0), kick_knock=(0.2, 0.7), kick_lp=(7000, 10000),
-    snare_tone=(165, 230), snare_noise_decay=(0.15, 0.3), snare_hp=(1000, 2200), snare_drive=(2.0, 3.5),
-    snare_room=(0.2, 0.45), room_decay=(0.3, 0.6), room_lp=(4000, 6500), snare_ring=0.4,
-    clap_center=(900, 1400), clap_tail=(0.12, 0.28), clap_layers=(1, 4), clap_room=(0.15, 0.4),
-    clap_drive=(1.5, 2.8),
-    rim_kinds=["wood", "click", "wood", "808"],
-    hat_metal=(0.3, 0.6), hat_closed=(0.03, 0.09), hat_open=(0.25, 0.5), open_frac=0.3, hat_acoustic=0.5,
-    hat_drive=(1.3, 2.4),
-    percs=["tambourine", "shaker", "conga", "bongo", "woodblock", "tom", "snap", "cowbell", "timbale", "clave"],
-    crush=True, crush_lp=(7000, 10500), vinyl=True,
+    kick={"Thump": 3, "Knock": 3, "Slam": 2, "Box": 2},
+    kick_notes=(31, 39), kick_decay=(0.25, 0.45), kick_room=(0.0, 0.2),
+    snare={"Acoustic": 3, "Rimshot": 2, "Layered": 2, "Slam": 2, "Box": 1},
+    snare_tune=(165, 230), snare_room=(0.2, 0.45),
+    clap={"Group": 3, "Slap": 2, "Tight": 1, "Snap Stack": 1},
+    rim={"Cross Stick": 3, "Rimshot": 2, "Knuckle": 2, "Stick Click": 1, "Can": 1},
+    hat={"Closed": 4, "Open": 2, "Pedal": 2, "Shaker": 1, "Sizzle": 1},
+    percs=["Tambourine", "Shaker", "Conga", "Bongo", "Knuckle", "Box Tap", "Snap", "Woodblock", "Can", "Paper", "Cowbell"],
+    drive1=(2.0, 4.0), drive2=(1.5, 3.0), presence=(1, 4), clip=(1.2, 1.7), grit=(0.008, 0.02),
+    room_damp=(3500, 6000), crush=True, crush_lp=(7000, 10500), varispeed=(0.78, 0.94), varispeed_p=0.7,
+)
+
+HOUSE = dict(
+    kick={"Punch": 4, "Knock": 3, "Thump": 2, "Box": 1},
+    kick_notes=(31, 37), kick_decay=(0.25, 0.5),
+    snare={"Clapper": 3, "Layered": 2, "Acoustic": 2, "Rimshot": 1, "Box": 1},
+    snare_tune=(190, 260), snare_room=(0.15, 0.35),
+    clap={"Group": 4, "Tight": 2, "Snap Stack": 1, "Slap": 1},
+    rim={"Rimshot": 2, "Stick Click": 2, "Cross Stick": 2, "Glass": 1, "Can": 1},
+    hat={"Closed": 4, "Open": 3, "Shaker": 2, "Pedal": 1, "Sizzle": 1},
+    percs=["Conga", "Bongo", "Shaker", "Cowbell", "Woodblock", "Tambourine", "Clave", "Can", "Bottle", "Tom", "Snap"],
+    drive1=(1.5, 3.0), drive2=(1.2, 2.2), presence=(2, 5), clip=(1.2, 1.6), grit=(0.001, 0.004),
 )
 
 POP = dict(
-    kick_notes=(30, 36), kick_decay=(0.3, 0.55), kick_sweep=(3.5, 6.0), kick_tau=(0.01, 0.025),
-    kick_click=(0.3, 0.65), kick_drive=(1.5, 3.0),
-    kick_808=0.15, kick_808_notes=(26, 34), kick_808_decay=(1.0, 1.6), kick_808_drive=(1.5, 3.0),
-    snare_tone=(180, 245), snare_noise_decay=(0.2, 0.4), snare_hp=(1500, 3000), snare_drive=(1.3, 2.2),
-    snare_room=(0.25, 0.5), room_lp=(8000, 11000), snare_clap=0.6,
-    clap_center=(1100, 1800), clap_tail=(0.16, 0.34), clap_layers=(2, 5), clap_room=(0.25, 0.5),
-    hat_metal=(0.45, 0.75), hat_closed=(0.03, 0.08), hat_open=(0.3, 0.6), open_frac=0.3,
-    percs=["snap", "shaker", "tambourine", "clave", "tom", "woodblock", "triangle", "pluck", "conga", "metal"],
-    perc_room=(0.1, 0.35),
+    kick={"Punch": 3, "Knock": 3, "808": 1, "Thump": 1},
+    kick_notes=(30, 36), kick_decay=(0.3, 0.5), k808_decay=(1.0, 1.6),
+    snare={"Clapper": 3, "Layered": 3, "Acoustic": 1, "Crack": 1, "Mouth": 1},
+    snare_tune=(180, 245), snare_room=(0.25, 0.5),
+    clap={"Group": 3, "Snap Stack": 3, "Tight": 1},
+    rim={"Stick Click": 2, "Rimshot": 2, "Cross Stick": 1, "Glass": 1, "Tongue": 1},
+    hat={"Closed": 4, "Open": 2, "Shaker": 2, "Mouth": 1, "Keys": 1},
+    percs=["Snap", "Shaker", "Tambourine", "Clave", "Tom", "Woodblock", "Triangle", "Tongue Click", "Bottle", "Paper", "Conga"],
+    drive1=(1.4, 2.8), drive2=(1.2, 2.0), presence=(3, 6), clip=(1.2, 1.6), grit=(0.0, 0.002),
+    room_damp=(7000, 11000),
 )
 
 DISCO = dict(
-    kick_notes=(33, 39), kick_decay=(0.2, 0.36), kick_sweep=(2.0, 3.5), kick_tau=(0.015, 0.03),
-    kick_click=(0.2, 0.5), kick_drive=(1.2, 2.2), kick_knock=(0.1, 0.4),
-    snare_tone=(175, 225), snare_noise_decay=(0.2, 0.36), snare_hp=(800, 1500), snare_drive=(1.2, 2.0),
-    snare_room=(0.15, 0.32), snare_ring=0.6,
-    clap_center=(900, 1400), clap_tail=(0.14, 0.3), clap_layers=(3, 5), clap_room=(0.22, 0.4),
-    rim_kinds=["wood", "wood", "click"],
-    hat_closed=(0.04, 0.1), hat_open=(0.35, 0.7), open_frac=0.4, hat_acoustic=0.8, hat_room=(0.05, 0.2),
-    percs=["syndrum", "conga", "cowbell", "tambourine", "guiro", "clave", "bongo", "timbale", "triangle", "agogo"],
-    tape=True,
+    kick={"Thump": 4, "Knock": 2, "Box": 1},
+    kick_notes=(33, 39), kick_decay=(0.2, 0.36), kick_room=(0.0, 0.15),
+    snare={"Acoustic": 4, "Rimshot": 2, "Layered": 2},
+    snare_tune=(175, 225), snare_room=(0.15, 0.32),
+    clap={"Group": 5, "Slap": 1, "Tight": 1},
+    rim={"Cross Stick": 3, "Rimshot": 2, "Stick Click": 1},
+    hat={"Closed": 4, "Open": 3, "Pedal": 1, "Shaker": 1, "Sizzle": 1},
+    hat_closed=(0.04, 0.1), hat_open=(0.35, 0.8), hat_room=(0.05, 0.2),
+    percs=["Conga", "Bongo", "Cowbell", "Tambourine", "Guiro", "Clave", "Tom", "Triangle", "Woodblock", "Shaker", "Bottle"],
+    drive1=(1.3, 2.4), drive2=(1.1, 1.8), presence=(1, 4), clip=(1.1, 1.4), grit=(0.002, 0.006), tape=True,
 )
 
 FUNK = dict(
-    kick_notes=(33, 39), kick_decay=(0.18, 0.3), kick_sweep=(2.0, 3.5), kick_tau=(0.012, 0.025),
-    kick_click=(0.3, 0.6), kick_drive=(1.3, 2.5), kick_knock=(0.1, 0.4),
-    snare_tone=(195, 265), snare_noise_decay=(0.12, 0.22), snare_hp=(1200, 2500), snare_drive=(1.4, 2.4),
-    snare_room=(0.04, 0.16), snare_ring=0.5,
-    clap_center=(1000, 1500), clap_tail=(0.1, 0.2), clap_layers=(1, 3), clap_room=(0.04, 0.18),
-    rim_kinds=["wood", "click", "wood"], rim_room=(0.0, 0.15),
-    hat_closed=(0.03, 0.07), hat_open=(0.25, 0.45), open_frac=0.3, hat_acoustic=0.75,
-    percs=["cowbell", "conga", "guiro", "tambourine", "timbale", "bongo", "woodblock", "agogo", "clave", "shaker"],
-    perc_room=(0.0, 0.15), tape=True,
+    kick={"Thump": 3, "Knock": 3, "Box": 1},
+    kick_notes=(33, 39), kick_decay=(0.18, 0.3),
+    snare={"Acoustic": 3, "Rimshot": 3, "Crack": 1, "Layered": 1},
+    snare_tune=(195, 265), snare_room=(0.04, 0.16),
+    clap={"Tight": 2, "Group": 2, "Slap": 2},
+    rim={"Cross Stick": 3, "Rimshot": 2, "Stick Click": 1, "Knuckle": 1}, rim_room=(0.0, 0.12),
+    hat={"Closed": 5, "Open": 2, "Pedal": 2},
+    hat_closed=(0.03, 0.07), hat_open=(0.25, 0.45),
+    percs=["Cowbell", "Conga", "Guiro", "Tambourine", "Bongo", "Woodblock", "Clave", "Shaker", "Can", "Tom", "Knuckle"],
+    perc_room=(0.0, 0.15),
+    drive1=(1.6, 3.0), drive2=(1.2, 2.2), presence=(2, 5), clip=(1.2, 1.6), grit=(0.002, 0.008), tape=True,
 )
 
 DNB = dict(
-    kick_notes=(31, 37), kick_decay=(0.18, 0.32), kick_sweep=(5.0, 9.0), kick_tau=(0.006, 0.015),
-    kick_click=(0.5, 0.95), kick_drive=(2.0, 4.0),
-    snare_tone=(220, 300), snare_noise_decay=(0.18, 0.35), snare_hp=(2500, 4500), snare_drive=(2.0, 3.4),
-    snare_room=(0.18, 0.4), snare_clap=0.3,
-    clap_center=(1300, 2000), clap_tail=(0.14, 0.28), clap_layers=(2, 4), clap_room=(0.2, 0.4),
-    hat_metal=(0.5, 0.8), hat_scale=(1.2, 1.7), hat_closed=(0.02, 0.06), hat_open=(0.2, 0.4), open_frac=0.3,
-    percs=["shaker", "zap", "metal", "tom", "tick", "woodblock", "tambourine", "conga", "snap", "pluck"],
+    kick={"Punch": 4, "Knock": 3, "Slam": 1},
+    kick_notes=(31, 37), kick_decay=(0.18, 0.32),
+    snare={"Crack": 4, "Rimshot": 2, "Layered": 2, "Slam": 1},
+    snare_tune=(220, 300), snare_room=(0.18, 0.4),
+    clap={"Snap Stack": 2, "Group": 2, "Tight": 1, "Slap": 1},
+    rim={"Rimshot": 2, "Stick Click": 2, "Can": 1, "Glass": 1, "Cross Stick": 1},
+    hat={"Closed": 5, "Open": 2, "Shaker": 2, "Keys": 1},
+    hat_closed=(0.02, 0.06), hat_open=(0.2, 0.4),
+    percs=["Shaker", "Can", "Tom", "Woodblock", "Bottle", "Tambourine", "Conga", "Snap", "Keys", "Paper", "Clave"],
+    drive1=(2.5, 5.0), drive2=(1.8, 3.5), presence=(4, 8), clip=(1.4, 2.0), grit=(0.002, 0.006),
 )
 
 GENRES = {

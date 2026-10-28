@@ -125,7 +125,8 @@ juce::StringArray factoryNames()
 {
     return { "Basic Shapes", "Harmonic Sweep", "Pulse Width", "Vowel Morph", "Sync Sweep",
              "FM Growl", "Fold Sweep", "Digital Steps", "Organ Bars", "Breath",
-             "Hollow Lead", "Glass Bell", "Sine", "Saw" };
+             "Hollow Lead", "Glass Bell", "Sine", "Saw",
+             "Talk Growl", "Metal FM", "Squash Saw", "Comb Saw", "Bit Grit", "Chord Stack" };
 }
 
 std::vector<float> generateFactory (int index)
@@ -344,7 +345,108 @@ std::vector<float> generateFactory (int index)
             addFrames (1);
             frameFromHarmonics (frame (0), { 1.0 }, zeroPhases);
             break;
-        default: // Saw
+        case 14: // Talk Growl: a bright saw through formants moving o > a > e > i, with a nasal peak
+        {
+            addFrames (64);
+            const double formants[4][3] = { { 450, 800, 2800 }, { 800, 1200, 2700 }, { 500, 1800, 2600 }, { 300, 2300, 3200 } };
+            for (int f = 0; f < 64; ++f)
+            {
+                const double pos = f / 63.0 * 3.0;
+                const int v0 = juce::jmin (2, (int) pos);
+                const double t = pos - v0;
+                std::vector<double> a (300);
+                for (int h = 0; h < 300; ++h)
+                {
+                    const double hz = (h + 1) * 80.0;
+                    double amp = 0.0;
+                    for (int i = 0; i < 3; ++i)
+                    {
+                        const double fc = formants[v0][i] * (1.0 - t) + formants[v0 + 1][i] * t;
+                        const double bw = 60.0 + fc * 0.06;
+                        amp += (i == 0 ? 1.0 : 0.8) * std::exp (-0.5 * std::pow ((hz - fc) / bw, 2.0));
+                    }
+                    a[(size_t) h] = amp * 1.4 + 0.25 / (h + 1);
+                }
+                frameFromHarmonics (frame (f), a, sawPhases (300));
+            }
+            break;
+        }
+        case 15: // Metal FM: 1:3 and 1:5 phase modulation, index rising into a metallic scream
+        {
+            addFrames (64);
+            for (int f = 0; f < 64; ++f)
+            {
+                const double idx = 9.0 * std::pow (f / 63.0, 1.3);
+                for (int i = 0; i < N; ++i)
+                {
+                    const double p = (double) i / N * 2.0 * pi;
+                    frame (f)[i] = (float) std::sin (p + idx * std::sin (3.0 * p + 0.6 * std::sin (5.0 * p)));
+                }
+            }
+            break;
+        }
+        case 16: // Squash Saw: a saw driven harder and harder until it folds over
+        {
+            addFrames (64);
+            for (int f = 0; f < 64; ++f)
+            {
+                const double g = 1.0 + 24.0 * std::pow (f / 63.0, 2.0);
+                for (int i = 0; i < N; ++i)
+                {
+                    const double x = 1.0 - 2.0 * (double) i / N;
+                    const double y = std::tanh (g * x) / std::tanh (g);
+                    frame (f)[i] = (float) (f > 40 ? std::sin (y * pi * 0.5 * (1.0 + (f - 40) / 23.0 * 1.5)) : y);
+                }
+            }
+            break;
+        }
+        case 17: // Comb Saw: a saw with comb notches sweeping through it, like a flanger frozen in place
+        {
+            addFrames (64);
+            for (int f = 0; f < 64; ++f)
+            {
+                const double d = 0.02 + 0.3 * f / 63.0;
+                std::vector<double> a (800);
+                for (int h = 0; h < 800; ++h)
+                    a[(size_t) h] = std::abs (std::cos (pi * (h + 1) * d)) / (h + 1);
+                frameFromHarmonics (frame (f), a, sawPhases (800));
+            }
+            break;
+        }
+        case 18: // Bit Grit: saw plus square, bit-reduced and sample-reduced harder each frame
+        {
+            addFrames (32);
+            for (int f = 0; f < 32; ++f)
+            {
+                const double bits = std::pow (2.0, 7.0 - 5.0 * f / 31.0);
+                const int hold = 1 + f * 2;
+                for (int i = 0; i < N; ++i)
+                {
+                    const int j = (i / hold) * hold;
+                    const double ph = (double) j / N;
+                    const double x = 0.6 * (1.0 - 2.0 * ph) + 0.4 * (ph < 0.5 ? 1.0 : -1.0);
+                    frame (f)[i] = (float) (std::round (x * bits) / bits);
+                }
+            }
+            break;
+        }
+        case 19: // Chord Stack: harmonics 4, 5 and 6 (a major chord) growing out of a sine
+        {
+            addFrames (32);
+            for (int f = 0; f < 32; ++f)
+            {
+                const double t = f / 31.0;
+                std::vector<double> a (24, 0.0);
+                a[0] = 1.0;
+                a[1] = 0.5 * t;
+                a[3] = 0.9 * t; a[4] = 0.8 * t; a[5] = 0.7 * t;
+                a[7] = 0.45 * t * t; a[9] = 0.4 * t * t; a[11] = 0.35 * t * t;
+                a[15] = 0.2 * t * t; a[19] = 0.15 * t * t; a[23] = 0.12 * t * t;
+                frameFromHarmonics (frame (f), a, zeroPhases);
+            }
+            break;
+        }
+        default: // Saw (index 13)
             addFrames (1);
             frameFromHarmonics (frame (0), sawAmps (1000), sawPhases (1000));
             break;

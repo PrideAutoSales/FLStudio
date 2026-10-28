@@ -54,7 +54,8 @@ public:
     juce::Array<int> slotsForDestination (int destination) const;
 
     // Presets
-    juce::StringArray getFactoryPresetNames() const;
+    juce::StringArray getFactoryPresetNames() const;          // index 0 is Init
+    juce::String getFactoryPresetCategory (int index) const;  // "" for Init
     void loadFactoryPreset (int index);
     bool saveUserPreset (const juce::File& file);
     bool loadUserPreset (const juce::File& file);
@@ -78,6 +79,7 @@ private:
     void sendChangeMessageToEditor() { stateChanged.sendChangeMessage(); }
     void resetParametersToDefault();
     void setParam (const juce::String& pid, float value);
+    void applyRecipe (const juce::String& recipe);
     void renderLfoTable (int lfo);
 
     cs::Engine engine;

@@ -1169,7 +1169,7 @@ def build_deep_house():
          cutoff=1600, env_amt=0.0, lfo_pos=0.3, rev=0.45, size=0.85, hyp=0.3, wide=0.4)
     part(c, "Deep Pad Wash", "Breath", 0.5, uni=4, det=0.3, atk=1.5, dec=3.0, sus=0.9, rel=3.0, cutoff=2200,
          env_amt=0.0, lfo_pos=0.4, rev=0.6, size=0.95, rev_mode=HALL, wide=0.5, noise_lvl=0.03, noise_kind=1)
-    part(c, "Vocal Chop Lead", "Vowel Morph", 0.3, dec=0.6, sus=0.4, rel=0.2, cutoff=5000, filt=VOWEL, res=0.4,
+    part(c, "Vocal Chop Lead", "Vowel Morph", 0.3, dec=0.6, sus=0.4, rel=0.2, cutoff=4500, filt=LP12, res=0.25,
          env_amt=0.15, lfo_pos=0.35, dly="1/8.", dly_mix=0.25, rev=0.25, mono_glide=0.05, vel_pos=0.3)
     part(c, "Jazz Organ", "Organ Bars", 0.7, dec=0.3, sus=0.85, rel=0.12, cutoff=6000, env_amt=0.05,
          chorus_on=True, phaser_on=True, rev=0.2, size=0.4, rev_mode=ROOM)

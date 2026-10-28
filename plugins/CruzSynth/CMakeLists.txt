@@ -7,7 +7,7 @@ juce_add_plugin(CruzSynth
     PLUGIN_MANUFACTURER_CODE Cruz
     PLUGIN_CODE Crsy
     PRODUCT_NAME "Cruz Synth"
-    VERSION 0.1.1
+    VERSION 0.2.0
     FORMATS VST3 AU
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
@@ -30,7 +30,8 @@ target_sources(CruzSynth
         Source/UI/Controls.cpp
         Source/UI/Displays.cpp
         Source/UI/WavetableEditor.cpp
-        Source/UI/Pages.cpp)
+        Source/UI/Pages.cpp
+        Source/FactoryPresets.cpp)
 
 target_include_directories(CruzSynth PRIVATE Source)
 

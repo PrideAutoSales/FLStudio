@@ -161,8 +161,25 @@ void CruzSynthEditor::showPresetMenu()
     juce::PopupMenu m;
     m.addSectionHeader ("Factory");
     const auto names = proc.getFactoryPresetNames();
-    for (int i = 0; i < names.size(); ++i)
-        m.addItem (i + 1, names[i], true, names[i] == proc.getPresetName());
+    m.addItem (1, names[0], true, names[0] == proc.getPresetName());
+
+    // One submenu per category, in the order the bank lists them.
+    juce::StringArray categories;
+    for (int i = 1; i < names.size(); ++i)
+        categories.addIfNotAlreadyThere (proc.getFactoryPresetCategory (i));
+    for (const auto& cat : categories)
+    {
+        juce::PopupMenu sub;
+        bool holdsCurrent = false;
+        for (int i = 1; i < names.size(); ++i)
+            if (proc.getFactoryPresetCategory (i) == cat)
+            {
+                const bool current = names[i] == proc.getPresetName();
+                holdsCurrent = holdsCurrent || current;
+                sub.addItem (i + 1, names[i], true, current);
+            }
+        m.addSubMenu (cat, sub, true, nullptr, holdsCurrent);
+    }
 
     const auto folder = CruzSynthProcessor::getUserPresetFolder();
     const auto files = folder.findChildFiles (juce::File::findFiles, false, "*.cruzsynth");

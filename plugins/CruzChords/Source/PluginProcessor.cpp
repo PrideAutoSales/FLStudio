@@ -228,7 +228,9 @@ void CruzChordsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     hostPlaying = hostIsPlaying;
 
     // The progression.
-    const bool isPlaying = playing.load();
+    // The Play button, or FL Studio's own transport (space bar) when "Play with FL" is on.
+    const bool isPlaying = playing.load() || (followHost.load() && hostIsPlaying);
+    progressionSounding = isPlaying;
     if (isPlaying)
     {
         if (L != nullptr)
@@ -319,6 +321,8 @@ RenderOptions CruzChordsAudioProcessor::renderOptions() const
     opt.voicing.spread = m.spread;
     opt.voicing.smooth = m.smooth;
     opt.voicing.bassNote = m.bass;
+    opt.voicing.octave = m.octave;
+    opt.voicing.invert = m.invert;
     opt.rhythm = m.rhythm;
     return opt;
 }
@@ -328,11 +332,10 @@ void CruzChordsAudioProcessor::rebuildLive()
     auto& next = *spareLive;
     next.sequence = render (m.chords, renderOptions());
     next.keysPlayChords = m.keysPlayChords;
+    followHost = m.followHost;
     next.velocity = m.velocity;
 
-    VoicingOptions v;
-    v.spread = m.spread;
-    v.bassNote = m.bass;
+    VoicingOptions v = renderOptions().voicing;
     for (int pc = 0; pc < 12; ++pc)
     {
         const auto offsets = keyChordOffsets (m.key, m.scale, m.size, v, pc);
@@ -359,6 +362,19 @@ void CruzChordsAudioProcessor::modelChanged()
     sendChangeMessage();
 }
 
+void CruzChordsAudioProcessor::shuffle()
+{
+    ShuffleOptions o;
+    o.scale = m.scale;
+    o.adventure = m.adventure;
+    o.totalBeats = 4.0 * juce::jlimit (1, 32, m.shuffleBars);
+    o.chordBeats = m.chordEvery;
+    o.seed = (uint32_t) juce::Random::getSystemRandom().nextInt();
+    m.chords = shuffleProgression (m.chords, o);
+    m.presetIndex = -1;
+    modelChanged();
+}
+
 void CruzChordsAudioProcessor::loadPreset (int index)
 {
     if (index < 0 || index >= (int) presets().size())
@@ -381,11 +397,11 @@ Chord CruzChordsAudioProcessor::padChord (int degree) const
     return c;
 }
 
-static std::vector<int> withBass (std::vector<int> notes, int rootPc, bool bass)
+static std::vector<int> withBass (std::vector<int> notes, int rootPc, bool bass, int octave)
 {
     if (bass)
     {
-        const int b = bassNoteFor (rootPc);
+        const int b = bassNoteFor (rootPc) + 12 * octave;
         if (std::find (notes.begin(), notes.end(), b) == notes.end())
             notes.insert (notes.begin(), b);
     }
@@ -395,7 +411,9 @@ static std::vector<int> withBass (std::vector<int> notes, int rootPc, bool bass)
 std::vector<int> CruzChordsAudioProcessor::padNotes (int degree) const
 {
     const auto c = padChord (degree);
-    return withBass (voiceChord (m.key + c.offset, c.type, 0, 0, m.spread), m.key + c.offset, m.bass);
+    auto notes = voiceChord (m.key + c.offset, c.type, 0, 0, m.spread);
+    applyGlobalVoicing (notes, renderOptions().voicing);
+    return withBass (notes, m.key + c.offset, m.bass, m.octave);
 }
 
 std::vector<int> CruzChordsAudioProcessor::slotNotes (int slot) const
@@ -404,7 +422,7 @@ std::vector<int> CruzChordsAudioProcessor::slotNotes (int slot) const
         return {};
     const auto opt = renderOptions();
     const auto voiced = voiceProgression (m.chords, m.key, opt.voicing);
-    return withBass (voiced[(size_t) slot], m.key + m.chords[(size_t) slot].offset, m.bass);
+    return withBass (voiced[(size_t) slot], m.key + m.chords[(size_t) slot].offset, m.bass, m.octave);
 }
 
 void CruzChordsAudioProcessor::audition (const std::vector<int>& notes, bool on)
@@ -676,6 +694,12 @@ juce::ValueTree CruzChordsAudioProcessor::modelToTree() const
     t.setProperty ("smooth", m.smooth, nullptr);
     t.setProperty ("bass", m.bass, nullptr);
     t.setProperty ("keysPlayChords", m.keysPlayChords, nullptr);
+    t.setProperty ("followHost", m.followHost, nullptr);
+    t.setProperty ("octave", m.octave, nullptr);
+    t.setProperty ("invert", m.invert, nullptr);
+    t.setProperty ("adventure", m.adventure, nullptr);
+    t.setProperty ("shuffleBars", m.shuffleBars, nullptr);
+    t.setProperty ("chordEvery", m.chordEvery, nullptr);
     t.setProperty ("velocity", m.velocity, nullptr);
     t.setProperty ("sound", m.sound, nullptr);
     t.setProperty ("preset", m.presetIndex, nullptr);
@@ -688,6 +712,7 @@ juce::ValueTree CruzChordsAudioProcessor::modelToTree() const
         ct.setProperty ("inversion", c.inversion, nullptr);
         ct.setProperty ("octave", c.octave, nullptr);
         ct.setProperty ("beats", c.beats, nullptr);
+        ct.setProperty ("locked", c.locked, nullptr);
         t.appendChild (ct, nullptr);
     }
     return t;
@@ -762,6 +787,12 @@ void CruzChordsAudioProcessor::applyState (const juce::ValueTree& tree)
         m.smooth = (bool) t.getProperty ("smooth", m.smooth);
         m.bass = (bool) t.getProperty ("bass", m.bass);
         m.keysPlayChords = (bool) t.getProperty ("keysPlayChords", m.keysPlayChords);
+        m.followHost = (bool) t.getProperty ("followHost", m.followHost);
+        m.octave = juce::jlimit (-3, 3, (int) t.getProperty ("octave", 0));
+        m.invert = juce::jlimit (-4, 4, (int) t.getProperty ("invert", 0));
+        m.adventure = juce::jlimit (0.0f, 1.0f, (float) t.getProperty ("adventure", m.adventure));
+        m.shuffleBars = juce::jlimit (1, 32, (int) t.getProperty ("shuffleBars", m.shuffleBars));
+        m.chordEvery = juce::jlimit (1.0, 8.0, (double) t.getProperty ("chordEvery", m.chordEvery));
         m.velocity = juce::jlimit (0.05f, 1.0f, (float) t.getProperty ("velocity", m.velocity));
         m.sound = juce::jlimit (0, 1, (int) t.getProperty ("sound", m.sound));
         m.presetIndex = juce::jlimit (-1, (int) presets().size() - 1, (int) t.getProperty ("preset", m.presetIndex));
@@ -775,7 +806,8 @@ void CruzChordsAudioProcessor::applyState (const juce::ValueTree& tree)
                 c.type = juce::jlimit (0, (int) numChordTypes - 1, (int) ct.getProperty ("type", 0));
                 c.inversion = juce::jlimit (0, 5, (int) ct.getProperty ("inversion", 0));
                 c.octave = juce::jlimit (-2, 2, (int) ct.getProperty ("octave", 0));
-                c.beats = juce::jlimit (0.25, 32.0, (double) ct.getProperty ("beats", 4.0));
+                c.beats = juce::jlimit (0.25, 128.0, (double) ct.getProperty ("beats", 4.0));
+                c.locked = (bool) ct.getProperty ("locked", false);
                 m.chords.push_back (c);
             }
         modelChanged();

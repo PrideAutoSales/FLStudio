@@ -55,6 +55,12 @@ public:
         bool smooth = true;
         bool bass = false;
         bool keysPlayChords = true;
+        bool followHost = true;            // play whenever FL Studio plays
+        int octave = 0;                    // moves the whole progression, -3..3
+        int invert = 0;                    // inverts every chord up or down, -4..4
+        float adventure = 0.3f;            // shuffle: 0 traditional .. 1 adventurous
+        int shuffleBars = 4;               // shuffle length, 1..32 bars
+        double chordEvery = 4.0;           // shuffle: beats per chord
         float velocity = 0.8f;
         int sound = 0;                     // built-in sound: 0 keys, 1 pad
         int presetIndex = -1;
@@ -64,6 +70,7 @@ public:
     Model& model() noexcept { return m; }
     void modelChanged();
     void loadPreset (int index);
+    void shuffle();
 
     // Notes of the chords as they will play (after voicing), for the window.
     std::vector<int> slotNotes (int slot) const;
@@ -78,6 +85,7 @@ public:
     int getPlayingSlot() const noexcept { return playingSlot.load(); }
     double getHostBpm() const noexcept { return hostBpm.load(); }
     bool isHostPlaying() const noexcept { return hostPlaying.load(); }
+    bool isSounding() const noexcept { return progressionSounding.load(); }
 
     //==============================================================================
     // The synth that plays the chords.
@@ -143,6 +151,8 @@ private:
     std::atomic<int> playingSlot { -1 };
     std::atomic<double> hostBpm { 120.0 };
     std::atomic<bool> hostPlaying { false };
+    std::atomic<bool> progressionSounding { false };
+    std::atomic<bool> followHost { true };
     std::atomic<bool> panicRequested { false };
 
     // Built-in sound.

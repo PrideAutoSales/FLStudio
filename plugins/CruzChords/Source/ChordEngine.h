@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -182,6 +183,7 @@ struct Chord
     int inversion = 0;    // 0 = root position, 1 = first inversion, ...
     int octave = 0;       // -2..2
     double beats = 4.0;   // length in quarter notes
+    bool locked = false;  // Shuffle leaves locked chords alone
 };
 
 inline std::string chordName (const Chord& c, int keyPc, bool flats)
@@ -323,7 +325,29 @@ struct VoicingOptions
     int spread = Close;
     bool smooth = true;   // pick inversions so chords move as little as possible
     bool bassNote = false; // add the root an octave or two below
+    int octave = 0;        // moves every chord, -3..3
+    int invert = 0;        // moves every chord up (+) or down (-) by inversions, -4..4
 };
+
+// The whole-progression octave and inversion controls, applied to one voiced chord.
+inline void applyGlobalVoicing (std::vector<int>& notes, const VoicingOptions& opt)
+{
+    if (notes.empty())
+        return;
+    std::sort (notes.begin(), notes.end());
+    for (int i = 0; i < opt.invert; ++i)
+    {
+        notes.front() += 12;
+        std::sort (notes.begin(), notes.end());
+    }
+    for (int i = 0; i > opt.invert; --i)
+    {
+        notes.back() -= 12;
+        std::sort (notes.begin(), notes.end());
+    }
+    for (auto& n : notes)
+        n += 12 * opt.octave;
+}
 
 // Notes of one chord, lowest first, with the root placed between C3 (48) and B3 (59).
 inline std::vector<int> voiceChord (int rootPc, int type, int inversion, int octave, int spread)
@@ -427,6 +451,9 @@ inline std::vector<std::vector<int>> voiceProgression (const std::vector<Chord>&
             note += 12 * c.octave;
         out.push_back (best);
     }
+
+    for (auto& v : out)
+        applyGlobalVoicing (v, opt);
     return out;
 }
 
@@ -499,7 +526,7 @@ inline const std::vector<Rhythm>& rhythms()
 
 struct Sequence
 {
-    static constexpr int maxSlots = 16, maxNotes = 12, maxHits = 1024;
+    static constexpr int maxSlots = 64, maxNotes = 12, maxHits = 4096;
 
     struct Slot
     {
@@ -582,7 +609,7 @@ inline Sequence render (const std::vector<Chord>& chords, const RenderOptions& o
         std::vector<int> notes = voiced[i];
         if (opt.voicing.bassNote)
         {
-            const int bass = bassNoteFor (opt.keyPc + chords[i].offset);
+            const int bass = bassNoteFor (opt.keyPc + chords[i].offset) + 12 * opt.voicing.octave;
             if (std::find (notes.begin(), notes.end(), bass) == notes.end())
                 notes.insert (notes.begin(), bass);
         }
@@ -719,6 +746,196 @@ private:
 };
 
 //==============================================================================
+// Shuffle: writes a new progression that stays inside the key. Locked chords
+// stay where they are. "adventure" runs from 0 (the most familiar moves and
+// plain chords) to 1 (unexpected moves and richer chords).
+
+// True when every note of the chord is in the scale.
+inline bool chordInScale (int scaleIndex, int offset, int type)
+{
+    const auto& info = chordTypeInfo (type);
+    for (int i = 0; i < info.count; ++i)
+        if (degreeOfOffset (scaleIndex, offset + info.intervals[(size_t) i]) < 0)
+            return false;
+    return true;
+}
+
+inline bool isMinorFamily (int scaleIndex)
+{
+    // Minor, Dorian, Phrygian, Harmonic minor and Melodic minor have a minor tonic.
+    return scaleDegreeOffset (scaleIndex, 2) == 3;
+}
+
+// How likely each scale degree is to follow another, for the familiar end of the slider.
+inline double degreeTransition (bool minor, int from, int to)
+{
+    static const double majorTable[7][7] = {
+        // to:  I    ii   iii  IV   V    vi   vii
+        { 0.3, 2.0, 1.0, 4.0, 4.0, 4.0, 0.2 }, // from I
+        { 0.5, 0.2, 0.3, 1.0, 5.0, 0.5, 0.5 }, // from ii
+        { 0.5, 1.0, 0.2, 3.0, 0.5, 4.0, 0.1 }, // from iii
+        { 3.0, 1.5, 0.5, 0.2, 4.0, 1.5, 0.3 }, // from IV
+        { 5.0, 0.3, 0.5, 1.5, 0.2, 3.0, 0.1 }, // from V
+        { 1.0, 3.0, 1.0, 4.0, 2.0, 0.2, 0.1 }, // from vi
+        { 4.0, 0.2, 1.0, 0.3, 0.5, 1.0, 0.1 }, // from vii
+    };
+    static const double minorTable[7][7] = {
+        // to:  i    ii   III  iv   v    VI   VII
+        { 0.3, 0.5, 2.0, 3.5, 1.5, 4.0, 3.5 }, // from i
+        { 2.0, 0.1, 0.3, 0.5, 4.0, 0.5, 0.5 }, // from ii
+        { 1.5, 0.3, 0.2, 2.0, 0.5, 3.5, 3.0 }, // from III
+        { 3.0, 0.5, 1.0, 0.2, 2.5, 2.0, 2.5 }, // from iv
+        { 4.0, 0.2, 0.5, 1.0, 0.2, 2.5, 1.0 }, // from v
+        { 1.5, 0.5, 2.5, 2.0, 1.0, 0.2, 4.5 }, // from VI
+        { 4.0, 0.1, 2.5, 1.0, 0.5, 2.0, 0.2 }, // from VII
+    };
+    from = ((from % 7) + 7) % 7;
+    to = ((to % 7) + 7) % 7;
+    return minor ? minorTable[from][to] : majorTable[from][to];
+}
+
+// Chord types that fit on one degree, with how likely each is at this adventure level.
+inline std::vector<std::pair<int, double>> chordChoices (int scaleIndex, int degree, double adventure)
+{
+    const int offset = scaleDegreeOffset (scaleIndex, degree);
+    const double a = std::clamp (adventure, 0.0, 1.0);
+    std::vector<std::pair<int, double>> out;
+    auto add = [&] (int type, double weight)
+    {
+        if (weight <= 0 || ! chordInScale (scaleIndex, offset, type))
+            return;
+        for (const auto& o : out)
+            if (o.first == type)
+                return;
+        out.push_back ({ type, weight });
+    };
+
+    add (diatonicChordType (scaleIndex, degree, Triads), 3.0 * (1.0 - a) + 0.4);
+    add (diatonicChordType (scaleIndex, degree, Sevenths), 0.6 + 1.6 * a);
+    add (diatonicChordType (scaleIndex, degree, Ninths), 2.4 * a * a);
+    add (Sus2, 1.2 * a);
+    add (Sus4, 1.2 * a);
+    add (Add9, 1.4 * a);
+    add (MinAdd9, 1.4 * a);
+    add (Min11, 1.2 * a * a);
+    add (Six, 0.6 * a);
+    add (Min6, 0.6 * a);
+    add (Dom7Sus4, 0.8 * a * a);
+    if (out.empty())
+        out.push_back ({ diatonicChordType (scaleIndex, degree, Triads), 1.0 });
+    return out;
+}
+
+struct ShuffleOptions
+{
+    int scale = 0;
+    double adventure = 0.3;
+    double totalBeats = 16.0; // up to 32 bars = 128 beats
+    double chordBeats = 4.0;  // how often the chord changes
+    uint32_t seed = 1;
+};
+
+inline std::vector<Chord> shuffleProgression (const std::vector<Chord>& current, const ShuffleOptions& opt)
+{
+    std::mt19937 rng (opt.seed);
+    auto pick = [&rng] (const std::vector<double>& weights)
+    {
+        double sum = 0;
+        for (double w : weights)
+            sum += w;
+        double r = std::uniform_real_distribution<double> (0.0, sum) (rng);
+        for (size_t i = 0; i < weights.size(); ++i)
+        {
+            r -= weights[i];
+            if (r <= 0)
+                return (int) i;
+        }
+        return (int) weights.size() - 1;
+    };
+
+    const double a = std::clamp (opt.adventure, 0.0, 1.0);
+    const bool minor = isMinorFamily (opt.scale);
+    const double chordBeats = std::max (1.0, opt.chordBeats);
+    const int count = std::clamp ((int) std::lround (opt.totalBeats / chordBeats), 1, (int) Sequence::maxSlots);
+
+    // Start from the grid, keeping locked chords at their positions.
+    std::vector<Chord> out ((size_t) count);
+    std::vector<bool> locked ((size_t) count, false);
+    for (int i = 0; i < count; ++i)
+    {
+        out[(size_t) i].beats = chordBeats;
+        if (i < (int) current.size() && current[(size_t) i].locked)
+        {
+            out[(size_t) i] = current[(size_t) i];
+            out[(size_t) i].beats = chordBeats; // keeps its chord, follows the new grid
+            locked[(size_t) i] = true;
+        }
+    }
+
+    auto degreeOf = [&] (const Chord& c)
+    {
+        const int d = degreeOfOffset (opt.scale, c.offset);
+        return d < 0 ? 0 : d;
+    };
+
+    int prev = -1;
+    for (int i = 0; i < count; ++i)
+    {
+        if (locked[(size_t) i])
+        {
+            prev = degreeOf (out[(size_t) i]);
+            continue;
+        }
+
+        // The next locked chord, if it comes right after this one.
+        const int nextLocked = (i + 1 < count && locked[(size_t) i + 1]) ? degreeOf (out[(size_t) i + 1]) : -1;
+        const bool last = i == count - 1;
+        const int first = locked[0] ? degreeOf (out[0]) : 0;
+
+        std::vector<double> weights (7);
+        for (int d = 0; d < 7; ++d)
+        {
+            double w;
+            if (prev < 0)
+            {
+                // Familiar progressions start at home; adventurous ones anywhere.
+                w = d == 0 ? 6.0 * (1.0 - a) + 1.0 : 0.3 + 1.5 * a;
+            }
+            else
+            {
+                const double familiar = degreeTransition (minor, prev, d);
+                w = (1.0 - a) * familiar + a * (d == prev ? 0.15 : 1.5);
+                // Adventurous: favour the moves the familiar table rarely makes.
+                if (a > 0.5 && familiar < 1.0 && d != prev)
+                    w += (a - 0.5) * 2.0;
+            }
+
+            if (nextLocked >= 0)
+                w *= degreeTransition (minor, d, nextLocked) * (1.0 - a) + 1.0 * a + 0.2;
+            if (last && count > 1)
+                w *= degreeTransition (minor, d, first) * (1.0 - a) * 0.5 + 1.0;
+            if (diatonicChordType (opt.scale, d, Triads) == Dim)
+                w *= 0.1 + 0.4 * a; // diminished chords are rare in pop and dance music
+            weights[(size_t) d] = std::max (w, 0.0);
+        }
+
+        const int degree = pick (weights);
+        const auto choices = chordChoices (opt.scale, degree, a);
+        std::vector<double> typeWeights;
+        for (const auto& c : choices)
+            typeWeights.push_back (c.second);
+
+        Chord c;
+        c.offset = scaleDegreeOffset (opt.scale, degree);
+        c.type = choices[(size_t) pick (typeWeights)].first;
+        c.beats = chordBeats;
+        out[(size_t) i] = c;
+        prev = degree;
+    }
+    return out;
+}
+
+//==============================================================================
 // One key plays a whole chord: notes in the scale play the chord built on
 // that degree. Returns offsets from the played note (empty = outside the scale).
 
@@ -730,11 +947,12 @@ inline std::vector<int> keyChordOffsets (int keyPc, int scaleIndex, int size, co
 
     const int type = diatonicChordType (scaleIndex, degree, size);
     auto notes = voiceChord (0, type, 0, 0, opt.spread);
+    applyGlobalVoicing (notes, opt);
     std::vector<int> offsets;
     for (int n : notes)
         offsets.push_back (n - 48);
     if (opt.bassNote)
-        offsets.insert (offsets.begin(), -12);
+        offsets.insert (offsets.begin(), -12 + 12 * opt.octave);
     return offsets;
 }
 } // namespace cruzchords

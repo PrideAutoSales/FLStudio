@@ -34,7 +34,10 @@ If Cruz Chords does not show up, check that the plugin manager's search paths in
 1. Pick a **Key** and **Scale** at the top. The seven pads under them are the chords that fit that key. Click one to hear it.
 2. Pick a **Genre** and a **Progression**, or press **Surprise me**. Press **Play** to hear it loop.
 3. Build your own: press **+ Add** on any pad. Click a chord in **Your progression** to change its root, type, length, inversion or octave. With a chord selected, clicking a pad swaps it in.
-4. **Feel** changes the rhythm (house stabs, deep house groove, pumping, arpeggios and more) and how the chords are spread out.
+4. **Shuffle** writes a new progression in your key. Slide **Traditional ↔ Adventurous** to choose between familiar moves with plain chords and unexpected moves with richer chords. **Length** sets 1 to 32 bars and **Chord every** sets how often the chord changes.
+5. Click the **padlock** on a chord (or select it and press **Lock**) to keep it when you shuffle.
+6. **Whole progression: Octave and Invert** move every chord up or down at once.
+7. **Feel** changes the rhythm (house stabs, deep house groove, pumping, arpeggios and more) and how the chords are spread out.
 
 ## 5. Use your own synth
 
@@ -48,7 +51,7 @@ Pick whichever suits you:
 
 - **Drag it in:** drag the **Drag MIDI into FL Studio** box onto the playlist or onto a channel. You get the progression as notes you can edit in the piano roll.
 - **Save it:** **Save MIDI file** puts a `.mid` file in your **Music > Cruz Chords** folder.
-- **Let it play:** leave **Play** on. When the song plays, Cruz Chords follows FL Studio's tempo and position, so bar 1 of the song starts the progression.
+- **Let it play:** with **Play with FL** on, the progression starts and stops with FL Studio's play button and the space bar, and follows FL's tempo and bar position. Turn it off if you also dragged the MIDI into your song, so the chords don't play twice. The **Play** button still lets you hear it while FL is stopped.
 - **One note per chord:** with **Keys play chords** on, each note you put in Cruz Chords' piano roll plays the whole chord for that note of the scale.
 
 Advanced: Cruz Chords also sends its notes out as MIDI. To play a synth on another channel, open Cruz Chords'

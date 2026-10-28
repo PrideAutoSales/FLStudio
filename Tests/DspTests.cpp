@@ -342,6 +342,59 @@ void testDynamics()
     std::snprintf (label, sizeof (label), "the gain comes back after the sound stops (%+.3f dB after 10 releases)", r.reportedDb);
     check (std::abs (r.reportedDb) < 0.01, label);
 
+    {
+        // Auto threshold: a steady tone settles to almost no gain move, and a
+        // burst well above it uses the full range.
+        DynamicParams autoD;
+        autoD.enabled = true;
+        autoD.rangeDb = -6.0;
+        autoD.attackMs = 5.0;
+        autoD.releaseMs = 50.0;
+        autoD.autoThreshold = true;
+
+        EqEngine eq;
+        eq.prepare (48000.0);
+        eq.setBand (0, { true, { Shape::bell, 1000.0, 0.0, 1.0, 12 }, Placement::stereo, autoD });
+
+        const auto play = [&eq] (double seconds, double db)
+        {
+            const int n = (int) (seconds * 48000.0);
+            const double amp = std::pow (10.0, db / 20.0);
+            std::vector<float> l ((size_t) n), r;
+            for (int i = 0; i < n; ++i)
+                l[(size_t) i] = (float) (amp * std::sin (2.0 * pi * 1000.0 * i / 48000.0));
+            r = l;
+            float* channels[] { l.data(), r.data() };
+            eq.process (channels, 2, n);
+            return eq.currentDynamicGainDb (0);
+        };
+
+        const double steady = play (6.0, -20.0);
+        std::snprintf (label, sizeof (label), "auto threshold: a steady tone settles to almost no gain move (%+.2f dB)", steady);
+        check (steady > -0.5, label);
+
+        const double burst = play (0.3, -6.0);
+        std::snprintf (label, sizeof (label), "auto threshold: a burst 14 dB above the usual level uses the full range (%+.2f dB)", burst);
+        check (burst < -5.5, label);
+
+        const double later = play (8.0, -6.0);
+        std::snprintf (label, sizeof (label), "auto threshold: once the louder level is the norm, the band lets go again (%+.2f dB)", later);
+        check (later > -0.5, label);
+
+        const double fresh = [&]
+        {
+            EqEngine quietStart;
+            quietStart.prepare (48000.0);
+            quietStart.setBand (0, { true, { Shape::bell, 1000.0, 0.0, 1.0, 12 }, Placement::stereo, autoD });
+            std::vector<float> l (48000, 0.0f), r (48000, 0.0f);
+            float* channels[] { l.data(), r.data() };
+            quietStart.process (channels, 2, 48000);
+            return quietStart.currentDynamicGainDb (0);
+        }();
+        std::snprintf (label, sizeof (label), "auto threshold: silence leaves the band alone (%+.3f dB)", fresh);
+        check (std::abs (fresh) < 0.01, label);
+    }
+
     // Fast attack and release on noise, every shape, must stay stable.
     EqEngine eq;
     eq.prepare (44100.0);

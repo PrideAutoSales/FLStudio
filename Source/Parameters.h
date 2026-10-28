@@ -38,6 +38,10 @@ const juce::StringArray& phaseModeNames();
 const juce::StringArray& resolutionNames();
 juce::String formatFrequency (double hz);
 
+// The threshold's top position means "Auto": the threshold follows the band's
+// own level, so a dynamic band works without setting one.
+inline bool isAutoThreshold (float thresholdDb) noexcept { return thresholdDb >= (float) cruz::dsp::maxThresholdDb - 0.05f; }
+
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
 // Lock-free views of one band's parameters, safe to read from any thread.

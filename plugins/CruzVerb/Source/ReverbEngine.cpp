@@ -94,16 +94,18 @@ namespace cruzverb
         return a + t * (b - a);
     }
 
-    float ReverbEngine::DelayLine::readHermite (float delay) const noexcept
+    // First-order allpass (Thiran) interpolation. Unlike polynomial interpolation
+    // it has a flat magnitude response, so the tank loses no extra treble on each
+    // trip round the loop and the high band decays in exactly the time set by the
+    // decay filters. The fraction is kept between 1 and 2 samples so the
+    // coefficient stays between -1/3 and 0, far from the unstable edge.
+    float ReverbEngine::DelayLine::readAllpass (float delay, float& state) const noexcept
     {
-        const auto i = (int) delay;
-        const auto t = delay - (float) i;
-        const auto p0 = at (i - 1), p1 = at (i), p2 = at (i + 1), p3 = at (i + 2);
-
-        const auto c1 = 0.5f * (p2 - p0);
-        const auto c2 = p0 - 2.5f * p1 + 2.0f * p2 - 0.5f * p3;
-        const auto c3 = 0.5f * (p3 - p0) + 1.5f * (p1 - p2);
-        return ((c3 * t + c2) * t + c1) * t + p1;
+        const auto i = (int) delay - 1;
+        const auto d = delay - (float) i;
+        const auto eta = (1.0f - d) / (1.0f + d);
+        state = eta * at (i) + at (i + 1) - eta * state;
+        return state;
     }
 
     bool ReverbEngine::Smoothed::approach (float targetValue, float coeff) noexcept
@@ -226,6 +228,7 @@ namespace cruzverb
 
         modOffset = {};
         modTarget = {};
+        allpassState = {};
         for (size_t i = 0; i < modPhase.size(); ++i)
             modPhase[i] = (float) (2.0 * pi * (double) i / numLines);
 
@@ -414,7 +417,7 @@ namespace cruzverb
             for (size_t i = 0; i < lines.size(); ++i)
             {
                 modOffset[i] += modStep[i];
-                auto v = lines[i].readHermite (std::max (2.0f, lineLength[i] + modOffset[i]));
+                auto v = lines[i].readAllpass (std::max (2.0f, lineLength[i] + modOffset[i]), allpassState[i]);
                 v = highShelves[i].process (lowShelves[i].process (v)) * lineGain[i];
                 y[i] = v;
                 lateL += outSignL[i] * v;

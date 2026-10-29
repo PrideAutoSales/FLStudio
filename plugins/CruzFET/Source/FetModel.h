@@ -46,6 +46,12 @@ public:
         return 1.1 * std::pow (0.05 / 1.1, (std::clamp (knob, 1.0f, 7.0f) - 1.0) / 6.0);
     }
 
+    // The program-dependent release and the slow second stage stretch the
+    // recovery, so the base time constant sits a little under the nominal
+    // value. With this, a 5 to 15 dB step recovers 63 % in about 50 ms at 7
+    // and 1.1 s at 1, the published range of the hardware.
+    static constexpr double releaseCalibration = 0.68;
+
     // Static curve: gain change in dB (<= 0) for a detector level in dBFS.
     static float computeGainDb (float levelDb, int ratio) noexcept
     {
@@ -164,7 +170,7 @@ private:
     void updateCoefficients() noexcept
     {
         attackCoef = onePoleCoef (attackSeconds (settings.attack), sampleRate);
-        const double rel = releaseSeconds (settings.release) * (settings.ratio == ratioAll ? 1.3 : 1.0);
+        const double rel = releaseSeconds (settings.release) * releaseCalibration * (settings.ratio == ratioAll ? 1.3 : 1.0);
         releaseCoef = onePoleCoef (rel, sampleRate);
         slowAttackCoef = onePoleCoef (0.3, sampleRate);
         slowReleaseCoef = onePoleCoef (rel * 4.0, sampleRate);

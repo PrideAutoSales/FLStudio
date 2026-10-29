@@ -198,6 +198,18 @@ namespace detail
             }
         }
 
+        // 8-bit mu-law, like the companding converters in early digital delays.
+        // Quiet echoes keep their detail and fade out naturally instead of being
+        // gated by a coarse linear quantiser; loud ones pick up the grit.
+        static float companded (float x)
+        {
+            constexpr float mu = 255.0f, steps = 127.0f;
+            const float invLog = 1.0f / std::log1p (mu);
+            const float c = std::log1p (mu * std::min (std::abs (x), 1.0f)) * invLog;
+            const float q = std::round (c * steps) / steps;
+            return std::copysign (std::expm1 (q / invLog) / mu, x);
+        }
+
         float process (float x, const StyleSettings& s, float drive, float holdStep)
         {
             x = lowCut.highPass (x);
@@ -208,7 +220,7 @@ namespace detail
                 if (holdPhase >= 1.0f)
                 {
                     holdPhase -= 1.0f;
-                    held = std::round (x * 96.0f) / 96.0f;
+                    held = companded (x);
                 }
                 x = held;
             }

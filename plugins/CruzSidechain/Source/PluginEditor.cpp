@@ -1062,9 +1062,9 @@ juce::String CruzSidechainAudioProcessorEditor::statusText() const
     {
         case TriggerSource::sidechain:
             if (! processor.isSidechainConnected())
-                return "No sidechain input: route a track here, or use Self or Tempo";
+                return "No sidechain input here. Use Tempo or Self, or route a track in (see INSTALL)";
             if (! processor.hasSidechainSignal())
-                return "Sidechain connected, waiting for sound";
+                return "Nothing on input 2. In FL: gear icon > Processing > set input 2 to the trigger's track";
             return "Sidechain signal coming in";
         case TriggerSource::self:
             return "Ducking from this track's own sound";

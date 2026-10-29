@@ -1,0 +1,78 @@
+name: Build Cruz Pop Mix template
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "templates/CruzPopMix/**"
+      - ".github/workflows/build-cruzpopmix.yml"
+  pull_request:
+    paths:
+      - "templates/CruzPopMix/**"
+      - ".github/workflows/build-cruzpopmix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Write the templates
+        working-directory: templates/CruzPopMix
+        run: python make_template.py ../../dist/CruzPopMix-mac
+
+      - name: Add the Cruz Drums samples each template uses
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download samples --pattern Cruz-Drums.zip --dir drums
+          unzip -q drums/Cruz-Drums.zip -d drums
+          cd templates/CruzPopMix
+          python - <<'EOF'
+          import glob, os, shutil
+          import make_template as T
+          files = {f for _, f, _ in T.DRUM_SAMPLES} | {T.SC_SAMPLE}
+          for template in T.VARIANTS:
+              dest = os.path.join("../../dist/CruzPopMix-mac", template, "Samples")
+              os.makedirs(dest, exist_ok=True)
+              for f in sorted(files):
+                  found = glob.glob(os.path.join("../../drums/Cruz Drums", "*", "*", glob.escape(f)))
+                  assert len(found) == 1, f"{f}: found {found}"
+                  shutil.copy(found[0], dest)
+          EOF
+
+      - name: Check the templates
+        working-directory: templates/CruzPopMix
+        run: |
+          for t in ../../dist/CruzPopMix-mac/*/; do set -- "$@" "$t"; done
+          python check_template.py "$@"
+
+      - name: Package
+        run: |
+          cp templates/CruzPopMix/install.sh templates/CruzPopMix/README.md dist/CruzPopMix-mac/
+          chmod +x dist/CruzPopMix-mac/install.sh
+          cd dist && zip -qr CruzPopMix-mac.zip CruzPopMix-mac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CruzPopMix-mac
+          path: dist/CruzPopMix-mac.zip
+
+      - name: Publish to the "latest" release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload latest dist/CruzPopMix-mac.zip --clobber

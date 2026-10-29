@@ -38,9 +38,9 @@ public:
         sampleRate = newSampleRate;
 
         panelCoef       = onePoleCoef (0.002, sampleRate);
-        fastAttackCoef  = onePoleCoef (0.010, sampleRate);
+        fastAttackCoef  = onePoleCoef (0.006, sampleRate);
         fastReleaseCoef = onePoleCoef (0.087, sampleRate); // ~60 ms to half
-        slowAttackCoef  = onePoleCoef (0.350, sampleRate);
+        slowAttackCoef  = onePoleCoef (0.040, sampleRate);
         memoryUpCoef    = onePoleCoef (2.0, sampleRate);
         memoryDownCoef  = onePoleCoef (8.0, sampleRate);
         gainSmoothCoef  = onePoleCoef (0.020, sampleRate);
@@ -50,7 +50,7 @@ public:
         for (auto& d : dcBlock)
             d.prepare (sampleRate);
 
-        tube.setShape (0.35f, 0.12f);
+        tube.setShape (0.2f, 0.12f);
         reset();
     }
 
@@ -77,7 +77,7 @@ public:
         // Peak Reduction drives the panel. 0 leaves the cell dark for any
         // sane level, 100 starts working about 40 dB below full scale.
         const float drive = dbToGain (target.peakReduction * 0.5f - 10.0f + (target.limitMode ? 4.0f : 0.0f));
-        const float exponent = target.limitMode ? 6.0f : 2.0f; // ~3:1 vs ~7:1 once fully in
+        const float exponent = target.limitMode ? 10.0f : 3.0f; // about 3:1 vs 10:1 in use, like the hardware
         const float emphasisAmount = target.emphasis * 0.03f;  // up to about +12 dB at the top
         const float makeupTarget = target.gainDb;
 
@@ -113,7 +113,7 @@ public:
             memory += (depth > memory ? memoryUpCoef : memoryDownCoef) * (depth - memory);
 
             if ((i & 31) == 0)
-                slowReleaseCoef = onePoleCoef (0.5 + 3.0 * memory, sampleRate);
+                slowReleaseCoef = onePoleCoef (0.5 + 5.0 * memory, sampleRate);
 
             makeup += gainSmoothCoef * (makeupTarget - makeup);
             const float makeupGain = dbToGain (makeup);

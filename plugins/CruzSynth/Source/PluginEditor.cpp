@@ -7,16 +7,20 @@ CruzSynthEditor::CruzSynthEditor (CruzSynthProcessor& p)
       masterKnob (p, "master_vol", "Master"),
       scope (p),
       oscPage (p, [this] (int osc) { openTableEditor (osc); }),
+      pianoPage (p),
       matrixPage (p), fxPage (p), globalPage (p),
       keyboard (p.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard)
 {
     setLookAndFeel (&lookAndFeel);
+    body.onPaint = [this] (juce::Graphics& g) { paintBody (g); };
+    body.onLayout = [this] { layoutBody(); };
+    addAndMakeVisible (body);
 
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < kNumTabs; ++i)
     {
         tabs[i].setClickingTogglesState (false);
         tabs[i].onClick = [this, i] { showPage (i); };
-        addAndMakeVisible (tabs[i]);
+        body.addAndMakeVisible (tabs[i]);
     }
 
     presetButton.setTooltip ("Choose a preset, or save and load your own");
@@ -25,10 +29,10 @@ CruzSynthEditor::CruzSynthEditor (CruzSynthProcessor& p)
     nextButton.onClick = [this] { stepPreset (1); };
     saveButton.onClick = [this] { savePreset(); };
     for (auto* c : std::initializer_list<juce::Component*> { &presetButton, &prevButton, &nextButton, &saveButton, &masterKnob, &scope })
-        addAndMakeVisible (c);
+        body.addAndMakeVisible (c);
 
-    for (auto* c : std::initializer_list<juce::Component*> { &oscPage, &matrixPage, &fxPage, &globalPage })
-        addChildComponent (c);
+    for (auto* c : std::initializer_list<juce::Component*> { &oscPage, &pianoPage, &matrixPage, &fxPage, &globalPage })
+        body.addChildComponent (c);
 
     keyboard.setColour (juce::MidiKeyboardComponent::whiteNoteColourId, juce::Colour (0xffd9d5e3));
     keyboard.setColour (juce::MidiKeyboardComponent::blackNoteColourId, juce::Colour (0xff1d1b26));
@@ -37,27 +41,59 @@ CruzSynthEditor::CruzSynthEditor (CruzSynthProcessor& p)
     keyboard.setColour (juce::MidiKeyboardComponent::shadowColourId, juce::Colours::transparentBlack);
     keyboard.setLowestVisibleKey (36);
     keyboard.setKeyWidth (16.0f);
-    addAndMakeVisible (keyboard);
+    body.addAndMakeVisible (keyboard);
 
     proc.stateChanged.addChangeListener (this);
     presetButton.setButtonText (proc.getPresetName());
     showPage (0);
-    setSize (1120, 790);
+    body.setSize (kBaseWidth, kBaseHeight);
+
+    // Drag the bottom-right corner to resize. The size you pick is remembered
+    // for the next time the window opens.
+    const float scale = loadSavedScale();
+    setResizable (true, true);
+    setResizeLimits (kBaseWidth * 11 / 20, kBaseHeight * 11 / 20, kBaseWidth * 3 / 2, kBaseHeight * 3 / 2);
+    getConstrainer()->setFixedAspectRatio ((double) kBaseWidth / kBaseHeight);
+    setSize (juce::roundToInt (kBaseWidth * scale), juce::roundToInt (kBaseHeight * scale));
     startTimerHz (10);
 }
 
 CruzSynthEditor::~CruzSynthEditor()
 {
+    saveScale ((float) getWidth() / (float) kBaseWidth);
     proc.stateChanged.removeChangeListener (this);
     setLookAndFeel (nullptr);
+}
+
+float CruzSynthEditor::loadSavedScale()
+{
+    juce::PropertiesFile settings (CruzSynthProcessor::getSettingsOptions());
+    return juce::jlimit (0.55f, 1.5f, (float) settings.getDoubleValue ("uiScale", 0.8));
+}
+
+void CruzSynthEditor::saveScale (float scale)
+{
+    juce::PropertiesFile settings (CruzSynthProcessor::getSettingsOptions());
+    settings.setValue ("uiScale", scale);
 }
 
 void CruzSynthEditor::paint (juce::Graphics& g)
 {
     g.fillAll (colours::background);
+}
+
+void CruzSynthEditor::resized()
+{
+    const float scale = (float) getWidth() / (float) kBaseWidth;
+    body.setTransform (juce::AffineTransform::scale (scale));
+}
+
+void CruzSynthEditor::paintBody (juce::Graphics& g)
+{
+    g.fillAll (colours::background);
 
     // Logo
-    auto header = getLocalBounds().removeFromTop (52).reduced (16, 0);
+    auto header = body.getLocalBounds().removeFromTop (52).reduced (16, 0);
     g.setColour (colours::accent);
     g.setFont (font (22.0f, true));
     g.drawText ("CRUZ", header.removeFromLeft (64), juce::Justification::centredLeft);
@@ -66,20 +102,20 @@ void CruzSynthEditor::paint (juce::Graphics& g)
     g.drawText ("SYNTH", header.removeFromLeft (80), juce::Justification::centredLeft);
 
     g.setColour (colours::outline);
-    g.drawHorizontalLine (52, 0.0f, (float) getWidth());
+    g.drawHorizontalLine (52, 0.0f, (float) kBaseWidth);
 
     g.setColour (colours::textDim);
     g.setFont (font (11.0f));
-    g.drawText (juce::String (proc.live.activeVoices.load()) + " voices", getWidth() - 286, 18, 62, 16, juce::Justification::centred);
+    g.drawText (juce::String (proc.live.activeVoices.load()) + " voices", kBaseWidth - 286, 18, 62, 16, juce::Justification::centred);
 }
 
-void CruzSynthEditor::resized()
+void CruzSynthEditor::layoutBody()
 {
-    auto r = getLocalBounds();
+    auto r = body.getLocalBounds();
     auto header = r.removeFromTop (52).reduced (16, 10);
     header.removeFromLeft (150);
     for (auto& t : tabs)
-        t.setBounds (header.removeFromLeft (76).reduced (2, 0));
+        t.setBounds (header.removeFromLeft (64).reduced (2, 0));
     header.removeFromLeft (20);
 
     scope.setBounds (header.removeFromRight (140));
@@ -91,12 +127,12 @@ void CruzSynthEditor::resized()
     header.removeFromRight (6);
     nextButton.setBounds (header.removeFromRight (28));
     header.removeFromRight (2);
-    presetButton.setBounds (header.removeFromRight (200));
+    presetButton.setBounds (header.removeFromRight (180));
     header.removeFromRight (2);
     prevButton.setBounds (header.removeFromRight (28));
 
     keyboard.setBounds (r.removeFromBottom (56).reduced (8, 4));
-    for (auto* c : std::initializer_list<juce::Component*> { &oscPage, &matrixPage, &fxPage, &globalPage })
+    for (auto* c : std::initializer_list<juce::Component*> { &oscPage, &pianoPage, &matrixPage, &fxPage, &globalPage })
         c->setBounds (r);
     if (tableEditor != nullptr)
         tableEditor->setBounds (r);
@@ -105,8 +141,8 @@ void CruzSynthEditor::resized()
 void CruzSynthEditor::showPage (int index)
 {
     page = index;
-    juce::Component* pages[] = { &oscPage, &fxPage, &matrixPage, &globalPage };
-    for (int i = 0; i < 4; ++i)
+    juce::Component* pages[] = { &oscPage, &pianoPage, &fxPage, &matrixPage, &globalPage };
+    for (int i = 0; i < kNumTabs; ++i)
     {
         pages[i]->setVisible (i == index);
         tabs[i].setToggleState (i == index, juce::dontSendNotification);
@@ -117,8 +153,8 @@ void CruzSynthEditor::showPage (int index)
 void CruzSynthEditor::openTableEditor (int osc)
 {
     tableEditor = std::make_unique<WavetableEditor> (proc, osc, [this] { closeTableEditor(); });
-    addAndMakeVisible (*tableEditor);
-    resized();
+    body.addAndMakeVisible (*tableEditor);
+    layoutBody();
 }
 
 void CruzSynthEditor::closeTableEditor()
@@ -150,8 +186,8 @@ void CruzSynthEditor::timerCallback()
     if (v != lastVoices)
     {
         lastVoices = v;
-        repaint (getWidth() - 290, 10, 70, 30);
-        if (page == 3)
+        body.repaint (kBaseWidth - 290, 10, 70, 30);
+        if (page == 4)
             globalPage.repaint();
     }
 }

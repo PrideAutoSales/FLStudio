@@ -1,4 +1,5 @@
 #include "Parameters.h"
+#include "Piano.h"
 
 namespace cs
 {
@@ -72,6 +73,7 @@ const juce::StringArray& modDestinationParamIDs()
                       "fx_eq_lowgain", "fx_eq_highgain",
                       "fx_fil_cutoff", "fx_fil_res", "fx_fil_drive", "fx_fil_mix",
                       "fx_rev_size", "fx_rev_decay", "fx_rev_mix" });
+        a.addArray ({ "pno_level", "pno_tone" });
         jassert (a.size() == DstCount);
         return a;
     }();
@@ -96,7 +98,8 @@ juce::StringArray modDestinationNames()
                   "FX Multiband Depth",
                   "FX EQ Low Gain", "FX EQ High Gain",
                   "FX Filter Cutoff", "FX Filter Res", "FX Filter Drive", "FX Filter Mix",
-                  "FX Reverb Size", "FX Reverb Decay", "FX Reverb Mix" });
+                  "FX Reverb Size", "FX Reverb Decay", "FX Reverb Mix",
+                  "Piano Level", "Piano Tone" });
     jassert (a.size() == DstCount);
     return a;
 }
@@ -251,6 +254,13 @@ namespace
     }
 
     // Parameters added in 0.3 carry a newer version hint so hosts keep the older ones in place.
+    // ...and the piano, added in 0.4.
+    template <typename P, typename... Args>
+    void add4 (juce::AudioProcessorValueTreeState::ParameterLayout& layout, const juce::String& pid, Args&&... args)
+    {
+        layout.add (std::make_unique<P> (juce::ParameterID { pid, 4 }, std::forward<Args> (args)...));
+    }
+
     template <typename P, typename... Args>
     void add3 (juce::AudioProcessorValueTreeState::ParameterLayout& layout, const juce::String& pid, Args&&... args)
     {
@@ -470,6 +480,20 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     add3<APF> (L, "fx_rev_predelay", "Reverb Pre-delay", skewed (0.0f, 250.0f, 40.0f), 0.0f, withLabel ("ms"));
     add3<APF> (L, "fx_rev_lowcut", "Reverb Low Cut", skewed (20.0f, 1000.0f, 150.0f), 20.0f, hertz());
     add3<APF> (L, "fx_rev_hicut", "Reverb High Cut", skewed (1000.0f, 20000.0f, 6000.0f), 14000.0f, hertz());
+
+    // Piano
+    add4<APB> (L, "pno_on", "Piano On", false);
+    add4<APC> (L, "pno_model", "Piano Model", piano::modelNames(), 0);
+    add4<APF> (L, "pno_level", "Piano Level", unit, 0.8f, percent());
+    add4<APF> (L, "pno_tone", "Piano Tone", juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f, bipolarPercent());
+    add4<APF> (L, "pno_dynamics", "Piano Dynamics", unit, 0.5f, percent());
+    add4<APF> (L, "pno_sustain", "Piano Sustain", unit, 0.5f, percent());
+    add4<APF> (L, "pno_damper", "Piano Release", unit, 0.5f, percent());
+    add4<APF> (L, "pno_strings", "Piano Strings", unit, 0.3f, percent());
+    add4<APF> (L, "pno_body", "Piano Body", unit, 0.5f, percent());
+    add4<APF> (L, "pno_hammer", "Piano Hammer", unit, 0.5f, percent());
+    add4<APF> (L, "pno_width", "Piano Width", unit, 0.7f, percent());
+    add4<APB> (L, "pno_toFilter", "Piano To Filter", false);
 
     return L;
 }

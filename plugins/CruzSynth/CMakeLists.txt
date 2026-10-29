@@ -7,7 +7,7 @@ juce_add_plugin(CruzSynth
     PLUGIN_MANUFACTURER_CODE Cruz
     PLUGIN_CODE Crsy
     PRODUCT_NAME "Cruz Synth"
-    VERSION 0.3.0
+    VERSION 0.5.0
     FORMATS VST3 AU
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
@@ -23,6 +23,8 @@ target_sources(CruzSynth
         Source/Parameters.cpp
         Source/Wavetable.cpp
         Source/Engine.cpp
+        Source/Piano.cpp
+        Source/GrandData.cpp
         Source/Effects.cpp
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
@@ -35,6 +37,13 @@ target_sources(CruzSynth
 
 target_include_directories(CruzSynth PRIVATE Source)
 
+# Measurements of a recorded concert grand that the Concert Grand piano is
+# rebuilt from (see tools/piano/README.md).
+juce_add_binary_data(CruzSynthGrandData
+    HEADER_NAME CruzGrandData.h
+    NAMESPACE CruzGrandData
+    SOURCES Resources/ConcertGrand.cgpd)
+
 target_compile_definitions(CruzSynth
     PUBLIC
         JUCE_WEB_BROWSER=0
@@ -43,6 +52,7 @@ target_compile_definitions(CruzSynth
 
 target_link_libraries(CruzSynth
     PRIVATE
+        CruzSynthGrandData
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC

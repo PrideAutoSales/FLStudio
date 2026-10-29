@@ -61,6 +61,8 @@ public:
     bool loadUserPreset (const juce::File& file);
     juce::String getPresetName() const { return presetName; }
     static juce::File getUserPresetFolder();
+    // Where settings shared by every instance live, such as the window size.
+    static juce::PropertiesFile::Options getSettingsOptions();
 
     // Output scope (written by the audio thread)
     static constexpr int kScopeSize = 4096;

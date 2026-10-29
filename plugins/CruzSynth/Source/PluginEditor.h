@@ -22,6 +22,21 @@ public:
     bool wantsLayerBackedView() const override { return false; }
 
 private:
+    // Everything is laid out at the design size inside this component, and the
+    // whole thing is scaled to the window, so every size looks the same.
+    struct Body : juce::Component
+    {
+        std::function<void (juce::Graphics&)> onPaint;
+        std::function<void()> onLayout;
+        void paint (juce::Graphics& g) override { if (onPaint) onPaint (g); }
+        void resized() override { if (onLayout) onLayout(); }
+    };
+    static constexpr int kBaseWidth = 1120, kBaseHeight = 790;
+    static float loadSavedScale();
+    static void saveScale (float scale);
+
+    void paintBody (juce::Graphics&);
+    void layoutBody();
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
     void showPage (int index);
@@ -34,15 +49,20 @@ private:
 
     CruzSynthProcessor& proc;
     cs::ui::CruzLookAndFeel lookAndFeel;
+    Body body;
     juce::TooltipWindow tooltips { this, 600 };
 
     // Same tab order as Serum, so the workflow feels familiar.
-    juce::TextButton tabs[4] { juce::TextButton ("OSC"), juce::TextButton ("FX"), juce::TextButton ("MATRIX"), juce::TextButton ("GLOBAL") };
+    // A PIANO tab sits next to OSC for the modelled piano.
+    static constexpr int kNumTabs = 5;
+    juce::TextButton tabs[kNumTabs] { juce::TextButton ("OSC"), juce::TextButton ("PIANO"), juce::TextButton ("FX"),
+                                      juce::TextButton ("MATRIX"), juce::TextButton ("GLOBAL") };
     juce::TextButton presetButton, prevButton { "<" }, nextButton { ">" }, saveButton { "Save" };
     cs::ui::ModKnob masterKnob;
     cs::ui::ScopeView scope;
 
     cs::ui::OscPage oscPage;
+    cs::ui::PianoPage pianoPage;
     cs::ui::MatrixPage matrixPage;
     cs::ui::FxPage fxPage;
     cs::ui::GlobalPage globalPage;

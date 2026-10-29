@@ -118,6 +118,22 @@ private:
 };
 
 //==============================================================================
+// The piano's partials for middle C, struck softly and hard, so tone changes show.
+class PianoView : public juce::Component, private juce::Timer
+{
+public:
+    explicit PianoView (CruzSynthProcessor& p);
+    void paint (juce::Graphics&) override;
+
+private:
+    void timerCallback() override;
+    CruzSynthProcessor& proc;
+    float lastHash = -1.0f;
+    struct Strike { std::vector<float> f, a; };
+    Strike soft, hard;
+};
+
+//==============================================================================
 class ScopeView : public juce::Component, private juce::Timer
 {
 public:

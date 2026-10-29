@@ -1,4 +1,5 @@
 #include "Displays.h"
+#include "../Piano.h"
 #include <complex>
 
 namespace cs::ui
@@ -766,5 +767,109 @@ void ScopeView::paint (juce::Graphics& g)
     const float h = meter.getHeight() * juce::jmin (1.0f, peak);
     g.setColour (peak > 1.0f ? juce::Colours::red : colours::accent);
     g.fillRoundedRectangle (meter.removeFromBottom (h), 2.0f);
+}
+} // namespace cs::ui
+
+//==============================================================================
+namespace cs::ui
+{
+PianoView::PianoView (CruzSynthProcessor& p) : proc (p) { startTimerHz (10); }
+
+void PianoView::timerCallback()
+{
+    static const char* ids[] = { "pno_on", "pno_model", "pno_tone", "pno_dynamics", "pno_sustain",
+                                 "pno_strings", "pno_body", "pno_hammer", "pno_width" };
+    float hash = 0.0f, k = 1.0f;
+    for (auto* pid : ids)
+    {
+        hash += param (proc, pid) * k;
+        k *= 1.618f;
+    }
+    if (hash == lastHash)
+        return;
+    lastHash = hash;
+
+    piano::Settings s;
+    s.model = juce::roundToInt (param (proc, "pno_model"));
+    s.tone = param (proc, "pno_tone");
+    s.dynamics = param (proc, "pno_dynamics");
+    s.sustain = param (proc, "pno_sustain");
+    s.strings = param (proc, "pno_strings");
+    s.body = param (proc, "pno_body");
+    s.hammer = param (proc, "pno_hammer");
+    s.width = param (proc, "pno_width");
+
+    auto take = [&] (float vel, Strike& out)
+    {
+        auto voice = std::make_unique<piano::Voice>();
+        voice->prepare (48000.0);
+        voice->strike (60.0f, vel, s);
+        out.f.resize (300);
+        out.a.resize (300);
+        const int n = voice->snapshot (out.f.data(), out.a.data(), 300);
+        out.f.resize ((size_t) n);
+        out.a.resize ((size_t) n);
+    };
+    take (0.35f, soft);
+    take (1.0f, hard);
+    repaint();
+}
+
+void PianoView::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    drawDisplayBackground (g, r);
+    const bool on = param (proc, "pno_on") > 0.5f;
+    const int model = juce::roundToInt (param (proc, "pno_model"));
+
+    auto text = r.reduced (10, 6);
+    g.setFont (font (13.0f, true));
+    g.setColour (on ? colours::text : colours::textDim);
+    g.drawText (piano::modelNames()[model], text.removeFromTop (18), juce::Justification::centredLeft);
+    g.setFont (font (11.0f));
+    g.setColour (colours::textDim);
+    g.drawFittedText (piano::modelDescription (model), text.removeFromTop (16).toNearestInt(), juce::Justification::centredLeft, 1);
+
+    auto plot = r.reduced (10, 0).withTrimmedTop (48).withTrimmedBottom (18);
+    const float lo = -72.0f;
+    auto xFor = [&] (float f) { return plot.getX() + std::log10 (juce::jlimit (20.0f, 20000.0f, f) / 20.0f) / 3.0f * plot.getWidth(); };
+
+    g.setColour (colours::outline.withAlpha (0.4f));
+    g.setFont (font (10.0f));
+    for (float f : { 100.0f, 1000.0f, 10000.0f })
+    {
+        const float x = xFor (f);
+        g.drawVerticalLine ((int) x, plot.getY(), plot.getBottom());
+        g.drawText (f >= 1000.0f ? juce::String ((int) (f / 1000.0f)) + "k" : juce::String ((int) f),
+                    juce::Rectangle<float> (x + 3, plot.getBottom() + 2, 40, 14), juce::Justification::centredLeft);
+    }
+
+    float ref = 1.0e-9f;
+    for (float a : hard.a) ref = juce::jmax (ref, a);
+    auto yFor = [&] (float a)
+    {
+        const float db = 20.0f * std::log10 (a / ref + 1.0e-9f);
+        return juce::jmap (juce::jlimit (lo, 0.0f, db), lo, 0.0f, plot.getBottom(), plot.getY());
+    };
+
+    auto bars = [&] (const Strike& st, juce::Colour c, float w)
+    {
+        g.setColour (c.withAlpha (on ? 0.9f : 0.35f));
+        for (size_t i = 0; i < st.f.size(); ++i)
+        {
+            const float x = xFor (st.f[i]), y = yFor (st.a[i]);
+            if (y < plot.getBottom() - 1.0f)
+                g.fillRect (x - w * 0.5f, y, w, plot.getBottom() - y);
+        }
+    };
+    bars (hard, colours::accent, 2.0f);
+    bars (soft, colours::accent2, 2.0f);
+
+    g.setFont (font (10.0f));
+    auto legend = r.reduced (10, 6).removeFromTop (18).removeFromRight (150);
+    g.setColour (colours::accent2);
+    g.drawText ("soft", legend.removeFromLeft (50), juce::Justification::centredRight);
+    g.setColour (colours::accent);
+    g.drawText ("hard (middle C)", legend, juce::Justification::centredRight);
 }
 } // namespace cs::ui

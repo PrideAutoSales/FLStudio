@@ -22,6 +22,21 @@ public:
     bool wantsLayerBackedView() const override { return false; }
 
 private:
+    // Everything is laid out at the design size inside this component, and the
+    // whole thing is scaled to the window, so every size looks the same.
+    struct Body : juce::Component
+    {
+        std::function<void (juce::Graphics&)> onPaint;
+        std::function<void()> onLayout;
+        void paint (juce::Graphics& g) override { if (onPaint) onPaint (g); }
+        void resized() override { if (onLayout) onLayout(); }
+    };
+    static constexpr int kBaseWidth = 1120, kBaseHeight = 790;
+    static float loadSavedScale();
+    static void saveScale (float scale);
+
+    void paintBody (juce::Graphics&);
+    void layoutBody();
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
     void showPage (int index);
@@ -34,6 +49,7 @@ private:
 
     CruzSynthProcessor& proc;
     cs::ui::CruzLookAndFeel lookAndFeel;
+    Body body;
     juce::TooltipWindow tooltips { this, 600 };
 
     // Same tab order as Serum, so the workflow feels familiar.

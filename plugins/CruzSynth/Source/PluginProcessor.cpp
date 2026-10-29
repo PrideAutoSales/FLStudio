@@ -380,6 +380,16 @@ juce::File CruzSynthProcessor::getUserPresetFolder()
     return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Cruz Synth Presets");
 }
 
+juce::PropertiesFile::Options CruzSynthProcessor::getSettingsOptions()
+{
+    juce::PropertiesFile::Options o;
+    o.applicationName = "Cruz Synth";
+    o.folderName = "Cruz Synth";
+    o.filenameSuffix = "settings";
+    o.osxLibrarySubFolder = "Application Support";
+    return o;
+}
+
 bool CruzSynthProcessor::saveUserPreset (const juce::File& file)
 {
     juce::MemoryBlock mb;

@@ -12,7 +12,7 @@ constexpr int kNumLfos = 4;
 constexpr int kNumMacros = 4;
 constexpr int kNumModSlots = 16;
 constexpr int kMaxUnison = 16;
-constexpr int kMaxVoices = 16;
+constexpr int kMaxVoices = 32;
 constexpr int kLfoTableSize = 512;
 
 //==============================================================================

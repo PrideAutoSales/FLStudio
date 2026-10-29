@@ -4,11 +4,16 @@
 #include <array>
 #include <cstdint>
 
-// A modal piano: every string partial is a decaying resonator whose frequency,
-// level and decay come from a model of the hammer, the strings and the
-// soundboard. The curves were tuned against measurements of a recorded concert grand.
+// A modal piano: every string partial is a decaying resonator.
+//
+// The Concert Grand is rebuilt from measurements of a real grand (GrandData):
+// every overtone's own modes with their measured levels, decays, detuning and
+// stereo phase, plus the recorded hammer attack. The other models compute their
+// partials from a physical model of the hammer, strings and soundboard.
 namespace cs::piano
 {
+struct GrandData;
+
 juce::StringArray modelNames();
 juce::String modelDescription (int model);
 enum Model { ConcertGrand, BrightGrand, Upright, Felt, TineEP, ReedEP, NumModels };
@@ -30,27 +35,33 @@ class Voice
 {
 public:
     void prepare (double sampleRate);
-    void reset() noexcept { count = 0; noiseEnv = 0.0f; silentRun = 0; }
+    void reset() noexcept { count = 0; noiseEnv = 0.0f; silentRun = 0; residual = nullptr; }
 
     // Strikes the strings. pitch is a MIDI note number (may be fractional).
     void strike (float pitch, float velocity, const Settings& s);
     // Lets the dampers fall back on the strings (key released, pedal up).
     void release (const Settings& s);
+    // The same key struck again: the hammer stops what this strike left ringing.
+    void choke() noexcept;
     // Re-pitches every partial by a ratio (pitch bend).
     void retune (float semitoneOffset);
 
     // Adds the next n samples to l and r.
     void render (float* l, float* r, int n, float gain) noexcept;
 
-    bool isSilent() const noexcept { return count == 0 && noiseEnv < 1.0e-5f; }
+    bool isSilent() const noexcept { return count == 0 && noiseEnv < 1.0e-5f && residual == nullptr; }
 
     // The partials of the current strike (frequency and level), for drawing.
     int snapshot (float* freqs, float* levels, int maxCount) const noexcept;
 
 private:
-    static constexpr int kMax = 256;
+    static constexpr int kMax = 1024;
 
     void add (float freq, float amp, float decayDbPerSec, float panL, float panR) noexcept;
+    void strikeGrand (const GrandData& data, float pitch, float velocity, const Settings& s);
+    void renderGrand (float* bufL, float* bufR, int n) noexcept;
+    void addDecay (float dbPerSecAt0Hz, float dbPerSecPerKHz) noexcept;
+    void padModes() noexcept;
     void refreshRotations() noexcept;
     void cull() noexcept;
 
@@ -59,6 +70,22 @@ private:
     // Resonator state and coefficients, structure-of-arrays for speed.
     alignas (16) float re[kMax] {}, im[kMax] {}, cr[kMax] {}, ci[kMax] {}, gl[kMax] {}, gr[kMax] {};
     float freq[kMax] {}, radius[kMax] {};
+
+    // Measured grand: each mode has a complex gain per channel (gl/gr real parts,
+    // gli/gri imaginary), the modes swell in along a measured attack curve, and
+    // the recorded hammer attack plays alongside.
+    bool measured = false;
+    alignas (16) float gli[kMax] {}, gri[kMax] {};
+    const float* attackCurve = nullptr;
+    const float* residual = nullptr;
+    int residualLength = 0;
+    double residualPos = 0.0, residualStep = 1.0, attackPos = 0.0;
+    float strikeLevel = 0.0f;
+    float attackEnd = 0.0f, residualLowGain = 1.0f, residualHighGain = 1.0f;
+    float residualSplit = 0.1f, residualLowL = 0.0f, residualLowR = 0.0f;
+    const void* overtoneTable = nullptr; // GrandData::Overtone, for snapshot()
+    int numOvertones = 0;
+    float overtoneRatio = 1.0f, overtoneGain = 1.0f;
 
     // Electric piano pickup: the partials sum to mono and pass through a waveshaper.
     bool electric = false;

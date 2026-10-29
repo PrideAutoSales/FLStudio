@@ -1261,11 +1261,12 @@ GRAND, BRIGHT, UPRIGHT, FELT, TINE, REED = range(6)
 
 def piano(cat, name, model, tone=0.0, dyn=0.5, sus=0.5, damper=0.5, strings=0.3, body=0.5, hammer=0.5, width=0.7,
           level=0.8, rev=0.0, size=0.6, mode=HALL, pre=0.0):
-    """A modelled piano on its own: the oscillators are off and Env 1 just lets the strings ring."""
+    """A modelled piano on its own: the oscillators are off and Env 1 just lets the strings ring.
+    The grand gets 32 voices, so held pedal passages don't cut notes short."""
     p = new(cat, name)
     p.set(oscA_on=False, pno_on=True, pno_model=model, pno_tone=tone, pno_dynamics=dyn, pno_sustain=sus,
           pno_damper=damper, pno_strings=strings, pno_body=body, pno_hammer=hammer, pno_width=width,
-          pno_level=level, vel_sens=0.0, poly=16)
+          pno_level=level, vel_sens=0.0, poly=32 if model == GRAND else 16)
     amp(p, a=0.0, d=1.0, s=1.0, r=6.0)
     if rev:
         reverb(p, mix=rev, size=size, mode=mode, pre=pre, lowcut=150.0, hicut=8000.0)

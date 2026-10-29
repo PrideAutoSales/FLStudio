@@ -233,11 +233,11 @@
   "Minimal/Tiny Arp": 3.912982618996552,
   "Minimal/Echo Chord": 1.677352888288996,
   "Minimal/Metal Tick": 2.943925579926806,
-  "Pianos/Concert Grand": 0.906483102909952,
-  "Pianos/Grand Close Mic": 0.878886667405937,
-  "Pianos/Ballad Grand": 0.894604504194178,
-  "Pianos/Cinematic Grand": 0.912738231363796,
-  "Pianos/Grand Felt Pedal": 0.957000211181541,
+  "Pianos/Concert Grand": 1.26907634407393,
+  "Pianos/Grand Close Mic": 1.17770813432396,
+  "Pianos/Ballad Grand": 1.20771608066214,
+  "Pianos/Cinematic Grand": 1.06790373069564,
+  "Pianos/Grand Felt Pedal": 1.34937029776597,
   "Pianos/Pop Grand": 1.07883335886042,
   "Pianos/Bright Stage Grand": 1.03825197614,
   "Pianos/Dance Floor Piano": 1.24299135212699,
@@ -252,5 +252,5 @@
   "Pianos/Soft Tine Keys": 0.700553247999254,
   "Pianos/Reed EP Bark": 0.918339876666799,
   "Pianos/Reed EP Tremolo": 0.746459232490624,
-  "Pianos/Grand Pad Layer": 0.90791846379273
+  "Pianos/Grand Pad Layer": 1.18937318756848
 }

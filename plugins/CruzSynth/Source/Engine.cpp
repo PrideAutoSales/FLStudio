@@ -1,5 +1,6 @@
 #include "Engine.h"
 #include "Piano.h"
+#include "GrandData.h"
 
 namespace cs
 {
@@ -241,6 +242,14 @@ public:
             e.noteOff();
         if (pianoActive)
             piano.release (engine.block->piano);
+    }
+
+    // The same key struck again: its strings are still ringing from the last strike,
+    // and the hammer stops them as it strikes them anew.
+    void chokePiano() noexcept
+    {
+        if (pianoActive)
+            piano.choke();
     }
 
     void kill()
@@ -771,6 +780,9 @@ void Engine::prepare (double sr, int)
     for (auto& v : voices)
         v->prepare (sr);
     reset();
+
+    // Unpack the measured grand now, so its first note doesn't do it on the audio thread.
+    piano::GrandData::get();
 }
 
 void Engine::reset()
@@ -974,6 +986,10 @@ void Engine::noteOn (int note, float velocity)
     }
     else
     {
+        if (B.pnoOn)
+            for (auto& other : voices)
+                if (other->isPlaying() && other->note == note)
+                    other->chokePiano();
         auto* v = findVoiceFor (note);
         if (v != nullptr)
             v->start (note, velocity, ++noteCounter, lastNote, true);

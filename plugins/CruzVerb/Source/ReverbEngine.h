@@ -81,7 +81,7 @@ namespace cruzverb
             void push (float x) noexcept { buffer[(size_t) writePos] = x; writePos = (writePos + 1) & mask; }
             float at (int delay) const noexcept { return buffer[(size_t) ((writePos - delay) & mask)]; }
             float readLinear (float delay) const noexcept;
-            float readHermite (float delay) const noexcept;
+            float readAllpass (float delay, float& state) const noexcept;
 
         private:
             std::vector<float> buffer;
@@ -119,6 +119,7 @@ namespace cruzverb
         std::array<DelayLine, numLines> lines;
         std::array<Biquad, numLines> lowShelves, highShelves;
         std::array<float, numLines> lineGain {}, lineLength {}, modOffset {}, modTarget {}, modStep {}, modPhase {};
+        std::array<float, numLines> allpassState {};
 
         // Output stage.
         std::array<std::array<Biquad, 4>, 2> postEq;

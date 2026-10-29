@@ -59,8 +59,11 @@ if [ "${#missing[@]}" -gt 0 ]; then
         echo "Downloading $p..."
         if curl -fsSL -o "$work/$pkg.zip" "$RELEASE/$pkg.zip"; then
             (cd "$work" && ditto -x -k "$pkg.zip" .)
-            bash "$work/$pkg/install.sh"
-            added=$((added + 1))
+            if bash "$work/$pkg/install.sh"; then
+                added=$((added + 1))
+            else
+                echo "$p didn't install. Run this installer again to retry."
+            fi
         else
             echo "Couldn't download $p. The template still opens; that slot shows as missing until $p is installed."
         fi

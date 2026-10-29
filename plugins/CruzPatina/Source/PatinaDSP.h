@@ -312,7 +312,7 @@ public:
         float stereo = 0.0f;  // 0..1
     };
 
-    static constexpr float centreMs = 5.0f;
+    static constexpr float centreMs = 4.0f; // just over the deepest wow plus flutter swing (3.85 ms)
     static constexpr float maxWowMs = 3.5f;
     static constexpr float maxFlutterMs = 0.35f;
 

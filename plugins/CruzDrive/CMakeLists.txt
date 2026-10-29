@@ -2,7 +2,7 @@
 # Built from the root CMakeLists, which fetches JUCE.
 
 juce_add_plugin(CruzDrive
-    VERSION 0.1.1
+    VERSION 0.2.0
     COMPANY_NAME "Cruz Audio"
     BUNDLE_ID com.cruzaudio.cruzdrive
     PLUGIN_MANUFACTURER_CODE Cruz

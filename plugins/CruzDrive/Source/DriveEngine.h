@@ -60,11 +60,14 @@ namespace cruzdrive
                 return cubic (x + bias) - offset;
             }
 
-            case 3: // Valve: asymmetric exponential, like a single triode stage.
+            case 3: // Valve: a single-ended triode. The grid sits well off centre, so
+                    // the curve bends far more on one side and second harmonic leads
+                    // at every drive setting, and the two sides clip at different levels.
             {
-                constexpr float negLimit = 0.7f;
-                return x >= 0.0f ? 1.0f - std::exp (-juce::jmin (x, 30.0f))
-                                 : negLimit * (std::exp (juce::jmax (x, -30.0f) / negLimit) - 1.0f);
+                constexpr float bias = 0.6f;
+                constexpr float offset = 0.5370496f;  // tanh (bias)
+                constexpr float slope = 1.4053278f;   // 1 / (1 - tanh^2 (bias)), unity gain at zero
+                return fastTanh (x * slope + bias) - offset;
             }
 
             case 4: // Fuzz: firm knee plus a squared term for gritty even harmonics.

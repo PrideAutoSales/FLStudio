@@ -7,12 +7,13 @@ CruzSynthEditor::CruzSynthEditor (CruzSynthProcessor& p)
       masterKnob (p, "master_vol", "Master"),
       scope (p),
       oscPage (p, [this] (int osc) { openTableEditor (osc); }),
+      pianoPage (p),
       matrixPage (p), fxPage (p), globalPage (p),
       keyboard (p.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard)
 {
     setLookAndFeel (&lookAndFeel);
 
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < kNumTabs; ++i)
     {
         tabs[i].setClickingTogglesState (false);
         tabs[i].onClick = [this, i] { showPage (i); };
@@ -27,7 +28,7 @@ CruzSynthEditor::CruzSynthEditor (CruzSynthProcessor& p)
     for (auto* c : std::initializer_list<juce::Component*> { &presetButton, &prevButton, &nextButton, &saveButton, &masterKnob, &scope })
         addAndMakeVisible (c);
 
-    for (auto* c : std::initializer_list<juce::Component*> { &oscPage, &matrixPage, &fxPage, &globalPage })
+    for (auto* c : std::initializer_list<juce::Component*> { &oscPage, &pianoPage, &matrixPage, &fxPage, &globalPage })
         addChildComponent (c);
 
     keyboard.setColour (juce::MidiKeyboardComponent::whiteNoteColourId, juce::Colour (0xffd9d5e3));
@@ -79,7 +80,7 @@ void CruzSynthEditor::resized()
     auto header = r.removeFromTop (52).reduced (16, 10);
     header.removeFromLeft (150);
     for (auto& t : tabs)
-        t.setBounds (header.removeFromLeft (76).reduced (2, 0));
+        t.setBounds (header.removeFromLeft (64).reduced (2, 0));
     header.removeFromLeft (20);
 
     scope.setBounds (header.removeFromRight (140));
@@ -91,12 +92,12 @@ void CruzSynthEditor::resized()
     header.removeFromRight (6);
     nextButton.setBounds (header.removeFromRight (28));
     header.removeFromRight (2);
-    presetButton.setBounds (header.removeFromRight (200));
+    presetButton.setBounds (header.removeFromRight (180));
     header.removeFromRight (2);
     prevButton.setBounds (header.removeFromRight (28));
 
     keyboard.setBounds (r.removeFromBottom (56).reduced (8, 4));
-    for (auto* c : std::initializer_list<juce::Component*> { &oscPage, &matrixPage, &fxPage, &globalPage })
+    for (auto* c : std::initializer_list<juce::Component*> { &oscPage, &pianoPage, &matrixPage, &fxPage, &globalPage })
         c->setBounds (r);
     if (tableEditor != nullptr)
         tableEditor->setBounds (r);
@@ -105,8 +106,8 @@ void CruzSynthEditor::resized()
 void CruzSynthEditor::showPage (int index)
 {
     page = index;
-    juce::Component* pages[] = { &oscPage, &fxPage, &matrixPage, &globalPage };
-    for (int i = 0; i < 4; ++i)
+    juce::Component* pages[] = { &oscPage, &pianoPage, &fxPage, &matrixPage, &globalPage };
+    for (int i = 0; i < kNumTabs; ++i)
     {
         pages[i]->setVisible (i == index);
         tabs[i].setToggleState (i == index, juce::dontSendNotification);
@@ -151,7 +152,7 @@ void CruzSynthEditor::timerCallback()
     {
         lastVoices = v;
         repaint (getWidth() - 290, 10, 70, 30);
-        if (page == 3)
+        if (page == 4)
             globalPage.repaint();
     }
 }

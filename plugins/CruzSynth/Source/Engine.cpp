@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "Piano.h"
 
 namespace cs
 {
@@ -38,6 +39,9 @@ struct Engine::Block
     std::atomic<float>* fltOnP; std::atomic<float>* fltTypeP; std::atomic<float>* fltKeyP;
     std::atomic<float>* polyP; std::atomic<float>* monoP; std::atomic<float>* legatoP; std::atomic<float>* glideP;
     std::atomic<float>* bendP; std::atomic<float>* velP;
+    std::atomic<float>* pnoOnP; std::atomic<float>* pnoModelP; std::atomic<float>* pnoToFilterP;
+    std::atomic<float>* pnoDynP; std::atomic<float>* pnoSusP; std::atomic<float>* pnoDampP; std::atomic<float>* pnoStrP;
+    std::atomic<float>* pnoBodyP; std::atomic<float>* pnoHamP; std::atomic<float>* pnoWidthP;
     std::atomic<float>* dstP[DstCount] {};
     juce::NormalisableRange<float> ranges[DstCount];
 
@@ -50,6 +54,7 @@ struct Engine::Block
     struct Lfo { int shape, mode; bool sync; float rise, smooth, phase; double syncRate; } lfo[kNumLfos];
     float macros[kNumMacros];
     int poly; bool mono, legato; float glide; int bendRange; float velSens;
+    bool pnoOn, pnoToFilter; piano::Settings piano;
     ModSlot slots[kNumModSlots]; int numSlots = 0;
     float baseNorm[DstCount] {}, baseReal[DstCount] {};
     int modulatedDst[DstCount] {}; int numModulated = 0;
@@ -83,6 +88,9 @@ struct Engine::Block
         fltOnP = p ("flt_on"); fltTypeP = p ("flt_type"); fltKeyP = p ("flt_keytrack");
         polyP = p ("poly"); monoP = p ("mono"); legatoP = p ("legato"); glideP = p ("glide");
         bendP = p ("bend_range"); velP = p ("vel_sens");
+        pnoOnP = p ("pno_on"); pnoModelP = p ("pno_model"); pnoToFilterP = p ("pno_toFilter");
+        pnoDynP = p ("pno_dynamics"); pnoSusP = p ("pno_sustain"); pnoDampP = p ("pno_damper"); pnoStrP = p ("pno_strings");
+        pnoBodyP = p ("pno_body"); pnoHamP = p ("pno_hammer"); pnoWidthP = p ("pno_width");
 
         const auto& ids = modDestinationParamIDs();
         for (int d = 1; d < DstCount; ++d)
@@ -126,6 +134,10 @@ struct Engine::Block
         poly = juce::jlimit (1, kMaxVoices, i (polyP));
         mono = b (monoP); legato = b (legatoP); glide = f (glideP);
         bendRange = i (bendP); velSens = f (velP);
+        pnoOn = b (pnoOnP); pnoToFilter = b (pnoToFilterP);
+        piano.model = i (pnoModelP);
+        piano.dynamics = f (pnoDynP); piano.sustain = f (pnoSusP); piano.damper = f (pnoDampP);
+        piano.strings = f (pnoStrP); piano.body = f (pnoBodyP); piano.hammer = f (pnoHamP); piano.width = f (pnoWidthP);
 
         bool used[DstCount] {};
         numSlots = 0;
@@ -163,6 +175,7 @@ public:
             c.prepare ((int) (sr / 18.0) + 8);
         for (int ch = 0; ch < 2; ++ch)
             noise[ch].seed ((juce::uint32) (std::rand() + ch * 7919));
+        piano.prepare (sr);
         kill();
     }
 
@@ -184,6 +197,7 @@ public:
             return; // legato: keep envelopes and phases running
 
         playing = true;
+        pianoStrike = true; // struck on the next control tick, once modulation is known
         randomValue = engine.rng.nextFloat();
         for (auto& e : env)
             e.noteOn (wasPlaying);
@@ -225,6 +239,8 @@ public:
         held = false;
         for (auto& e : env)
             e.noteOff();
+        if (pianoActive)
+            piano.release (engine.block->piano);
     }
 
     void kill()
@@ -235,6 +251,8 @@ public:
         amp = 0.0f;
         for (auto& e : env)
             e.reset();
+        piano.reset();
+        pianoActive = pianoStrike = false;
     }
 
     void render (float* outL, float* outR, int numSamples)
@@ -469,6 +487,29 @@ private:
             noiseGr = std::sin (th) * eff[DstNoiseLevel] * juce::MathConstants<float>::sqrt2 * 0.5f;
         }
 
+        // Piano
+        if (B.pnoOn)
+        {
+            if (pianoStrike)
+            {
+                auto settings = B.piano;
+                settings.tone = eff[DstPnoTone];
+                piano.strike (pitch, velocity, settings);
+                pianoPitch = pitch;
+                pianoActive = true;
+                pianoStrike = false;
+                if (! held && ! sustained)
+                    piano.release (settings);
+            }
+            if (pianoActive)
+                piano.retune (pitch - pianoPitch + bend);
+            pianoGain = eff[DstPnoLevel] * 1.6f;
+        }
+        else
+        {
+            pianoActive = pianoStrike = false;
+        }
+
         // Filter
         if (B.fltOn)
         {
@@ -515,6 +556,16 @@ private:
         const float target = env[0].getValue() * velGain * eff[DstMasterVol] * 0.4f; // headroom for chords
         ampStep = (target - amp) / (float) kCtrl;
         ending = ! env[0].isActive();
+
+        // A piano-only sound ends when its strings fall silent, whatever the envelope says.
+        if (pianoActive && ! held && ! anyOscillatorOn() && piano.isSilent())
+            ending = true;
+    }
+
+    bool anyOscillatorOn() const noexcept
+    {
+        const auto& B = *engine.block;
+        return oscOn[0] || oscOn[1] || B.subOn || B.noiseOn;
     }
 
     float readWarped (int o, double ph, int level, float other) const noexcept
@@ -606,9 +657,18 @@ private:
     void renderSamples (float* outL, float* outR, int n) noexcept
     {
         const auto& B = *engine.block;
+        float pl[kCtrl] {}, pr[kCtrl] {};
+        const bool pianoOn = pianoActive && B.pnoOn;
+        if (pianoOn)
+            piano.render (pl, pr, n, pianoGain);
+
         for (int i = 0; i < n; ++i)
         {
             float fl = 0.0f, fr = 0.0f, dl = 0.0f, dr = 0.0f;
+            if (pianoOn)
+            {
+                if (B.pnoToFilter) { fl += pl[i]; fr += pr[i]; } else { dl += pl[i]; dr += pr[i]; }
+            }
 
             for (int o = 0; o < kNumOscs; ++o)
             {
@@ -688,6 +748,10 @@ private:
     bool driveOn = false;
 
     float amp = 0.0f, ampStep = 0.0f;
+
+    piano::Voice piano;
+    bool pianoActive = false, pianoStrike = false;
+    float pianoGain = 1.0f, pianoPitch = 60.0f;
 };
 
 //==============================================================================

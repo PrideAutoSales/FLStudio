@@ -14,7 +14,14 @@ A wavetable synthesizer instrument (VST3 + AU) for FL Studio on Mac.
 - **Modulation**: 3 envelopes (Env 1 is the amp), 4 LFOs with drawable shapes, tempo sync and Free/Retrig/Envelope modes,
   4 macros, velocity, note, mod wheel, aftertouch, pitch bend and per-note random.
   Drag any source onto a knob; 16 routings shown on the MATRIX page.
-- **Serum-style layout**: OSC, FX, MATRIX and GLOBAL tabs in that order. The OSC page has sub and noise
+- **Modelled piano** on its own PIANO tab, with six models: Concert Grand, Bright Grand, Upright, Felt Piano,
+  Tine EP and Reed EP. Each string partial is a decaying resonator with real piano inharmonicity, octave
+  stretch, two-stage decay and beating between a note's strings, plus hammer noise, soundboard knock and dampers
+  (the top keys ring freely and the sustain pedal works). The grand's tone, decay and velocity response were
+  tuned against measurements of a recorded concert grand. Controls: Tone, Dynamics, Sustain, Release, Strings,
+  Body, Hammer and Width, with a display of the partials for a soft and a hard middle C. The piano can be layered
+  with the oscillators and sent through the filter and effects.
+- **Serum-style layout**: OSC, PIANO, FX, MATRIX and GLOBAL tabs. The OSC page has sub and noise
   on the left, the two oscillators (with OCT/SEM/FIN/CRS boxes above the wave display), the filter on the right,
   the envelopes and LFOs below with a large graph, voicing beside them, and the four macros along the bottom.
 - **FX rack with eleven modules**, in any order: Hyper (up to 7 drifting unison copies, plus Widen),
@@ -26,8 +33,8 @@ A wavetable synthesizer instrument (VST3 + AU) for FL Studio on Mac.
   switched-on modules in a rack, with live curves for the distortion, EQ and filter. Effect knobs can be
   modulated like any other: drag a macro, LFO or envelope onto them.
 - Mono/legato/glide, up to 16 voices, user presets saved to `~/Music/Cruz Synth Presets`.
-- **234 factory presets** in eight folders of the preset menu: Bass, Leads, Keys, Pads, Strings, Synths
-  (plucks, arps, stabs and chords), Deep House and Minimal. They cover future house and bass house, big-room and
+- **254 factory presets** in nine folders of the preset menu: Bass, Leads, Keys, Pads, Strings, Synths
+  (plucks, arps, stabs and chords), Deep House, Minimal and Pianos (grands, uprights, felt and electric pianos). They cover future house and bass house, big-room and
   festival leads, dubstep growls, screeches and wobbles, reese and sub basses, pumping sidechain chords and pads,
   deep house organ basses, dub chords, Rhodes and warm pads, and minimal blips, clicks, rubber basses and echo stabs.
   Every preset is level-matched and checked for clipping. Macro 1 is tone on almost every preset and Macro 2 is

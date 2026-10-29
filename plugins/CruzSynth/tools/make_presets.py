@@ -40,13 +40,13 @@ DESTS = ["OscACoarse", "OscAFine", "OscAPos", "OscADetune", "OscABlend", "OscAWa
          "FxFlaFeedback", "FxFlaMix", "FxPhaFreq", "FxPhaFeedback", "FxPhaMix",
          "FxChoDepth", "FxChoMix", "FxDlyFeedback", "FxDlyMix", "FxMbDepth",
          "FxEqLowGain", "FxEqHighGain", "FxFilCutoff", "FxFilRes", "FxFilDrive", "FxFilMix",
-         "FxRevSize", "FxRevDecay", "FxRevMix"]
+         "FxRevSize", "FxRevDecay", "FxRevMix", "PnoLevel", "PnoTone"]
 
 
 def param_ids():
     """Every parameter ID createParameterLayout() makes, to catch typos here."""
     text = open(os.path.join(SRC, "Parameters.cpp")).read()
-    ids = set(re.findall(r'add3?<AP\w>\s*\(L,\s*"(\w+)"', text))
+    ids = set(re.findall(r'add[34]?<AP\w>\s*\(L,\s*"(\w+)"', text))
     osc = re.findall(r'id::osc \(o, "(\w+)"\)', text)
     env = re.findall(r'id::env \(e, "(\w+)"\)', text)
     lfo = re.findall(r'id::lfo \(l, "(\w+)"\)', text)
@@ -1255,6 +1255,84 @@ def build_minimal():
     p.mod("Lfo2", "FxFilCutoff", 0.25, True)
 
 
+# ================================================================ PIANOS
+GRAND, BRIGHT, UPRIGHT, FELT, TINE, REED = range(6)
+
+
+def piano(cat, name, model, tone=0.0, dyn=0.5, sus=0.5, damper=0.5, strings=0.3, body=0.5, hammer=0.5, width=0.7,
+          level=0.8, rev=0.0, size=0.6, mode=HALL, pre=0.0):
+    """A modelled piano on its own: the oscillators are off and Env 1 just lets the strings ring."""
+    p = new(cat, name)
+    p.set(oscA_on=False, pno_on=True, pno_model=model, pno_tone=tone, pno_dynamics=dyn, pno_sustain=sus,
+          pno_damper=damper, pno_strings=strings, pno_body=body, pno_hammer=hammer, pno_width=width,
+          pno_level=level, vel_sens=0.0, poly=16)
+    amp(p, a=0.0, d=1.0, s=1.0, r=6.0)
+    if rev:
+        reverb(p, mix=rev, size=size, mode=mode, pre=pre, lowcut=150.0, hicut=8000.0)
+    p.mod("Macro1", "PnoTone", 0.4)
+    return p
+
+
+def tremolo(p, div="1/8", depth=0.25):
+    lfo(p, 4, div=div, shape=SINE_L, mode=FREE)
+    return p.mod("Lfo4", "MasterVol", depth)
+
+
+def build_pianos():
+    c = "Pianos"
+    space_macros(piano(c, "Concert Grand", GRAND, rev=0.16, size=0.7))
+    space_macros(piano(c, "Grand Close Mic", GRAND, width=0.9, body=0.6, hammer=0.6, rev=0.07, size=0.35,
+                       mode=ROOM))
+    space_macros(eq(piano(c, "Ballad Grand", GRAND, tone=-0.2, sus=0.65, damper=0.6, rev=0.26, size=0.8,
+                          pre=20.0), low_freq=150.0, low=1.5))
+    space_macros(piano(c, "Cinematic Grand", GRAND, tone=-0.35, sus=0.75, damper=0.75, width=0.85, rev=0.4,
+                       size=0.95, pre=35.0))
+    p = piano(c, "Grand Felt Pedal", GRAND, tone=-0.6, dyn=0.35, sus=0.7, damper=0.8, hammer=0.3, rev=0.3, size=0.85)
+    space_macros(delay(p, div="1/4.", mix=0.12, fb=0.3, hicut=3500.0))
+    p = piano(c, "Pop Grand", BRIGHT, tone=0.1, dyn=0.4, rev=0.14, size=0.5, mode=PLATE)
+    space_macros(eq(comp(p, thresh=-20.0, ratio=3.0, attack=10.0, release=150.0), high_freq=7000.0, high=2.0))
+    space_macros(piano(c, "Bright Stage Grand", BRIGHT, tone=0.35, hammer=0.65, width=0.8, rev=0.12, size=0.45,
+                       mode=ROOM))
+    p = piano(c, "Dance Floor Piano", BRIGHT, tone=0.55, dyn=0.25, sus=0.35, damper=0.3, strings=0.4, body=0.35,
+              rev=0.18, size=0.5, mode=PLATE)
+    eq(comp(p, thresh=-24.0, ratio=4.0, attack=3.0, release=100.0), low_freq=220.0, low=-6.0, high_freq=5000.0,
+       high=3.0)
+    space_macros(delay(p, div="1/8.", mix=0.12, fb=0.25))
+    space_macros(piano(c, "Studio Upright", UPRIGHT, rev=0.1, size=0.4, mode=ROOM))
+    space_macros(piano(c, "Honky Tonk Upright", UPRIGHT, tone=0.25, strings=0.85, damper=0.4, rev=0.1, size=0.35,
+                       mode=ROOM))
+    p = piano(c, "Bedroom Upright", UPRIGHT, tone=-0.3, dyn=0.35, hammer=0.7, rev=0.12, size=0.35, mode=ROOM)
+    dist(p, mode=TAPE, drive=0.25, tone=0.5, mix=0.6)
+    space_macros(fxfilter(p, kind=F_LP12, cutoff=4500.0, res=0.1))
+    space_macros(piano(c, "Felt Lullaby", FELT, sus=0.6, damper=0.6, rev=0.22, size=0.7))
+    p = piano(c, "Felt Diary", FELT, tone=-0.2, hammer=0.8, width=0.5, rev=0.14, size=0.4, mode=ROOM)
+    dist(p, mode=TAPE, drive=0.2, tone=0.45, mix=0.5)
+    lfo(p, 3, rate=0.35, shape=DRIFT_L, mode=FREE)
+    p.mod("Lfo3", "FxFilCutoff", 0.05, True)
+    space_macros(fxfilter(p, kind=F_LP12, cutoff=3800.0, res=0.05))
+    p = piano(c, "Ambient Felt Wash", FELT, tone=-0.1, sus=0.8, damper=0.85, width=0.9, rev=0.45, size=0.95,
+              pre=40.0)
+    space_macros(delay(p, div="1/4.", mix=0.18, fb=0.45, hicut=3000.0))
+    p = piano(c, "Tine EP Classic", TINE, dyn=0.55, rev=0.12, size=0.5, mode=ROOM)
+    space_macros(chorus(tremolo(p, div="1/8", depth=0.18), rate=0.5, depth=0.3, mix=0.3))
+    space_macros(phaser(piano(c, "Tine EP Phaser", TINE, tone=0.2, rev=0.14, size=0.5, mode=PLATE),
+                        rate=0.25, depth=0.6, mix=0.45, freq=700.0, fb=0.4))
+    p = piano(c, "Soft Tine Keys", TINE, tone=-0.4, dyn=0.35, sus=0.6, rev=0.2, size=0.6)
+    space_macros(chorus(p, rate=0.35, depth=0.35, mix=0.4))
+    p = piano(c, "Reed EP Bark", REED, tone=0.35, dyn=0.65, rev=0.1, size=0.4, mode=ROOM)
+    space_macros(dist(p, mode=TUBE, drive=0.2, tone=0.6, mix=0.5))
+    p = piano(c, "Reed EP Tremolo", REED, rev=0.12, size=0.45, mode=ROOM)
+    space_macros(tremolo(p, div="1/8T", depth=0.3))
+    # A grand with a slow pad blooming underneath (Env 2 brings the pad in).
+    p = piano(c, "Grand Pad Layer", GRAND, tone=-0.1, sus=0.6, rev=0.3, size=0.85)
+    osc(p, "A", table="Basic Shapes", pos=SAW, uni=7, det=0.3, level=0.0, octave=0)
+    flt(p, kind=LP24, cutoff=1400.0, res=0.1)
+    env2(p, a=1.4, d=1.0, s=1.0, r=3.0)
+    p.mod("Env2", "OscALevel", 0.35)
+    space_macros(chorus(p, rate=0.3, depth=0.4, mix=0.35))
+    p.set(pno_toFilter=False)
+
+
 def main():
     build_bass()
     build_leads()
@@ -1264,6 +1342,7 @@ def main():
     build_synths()
     build_deep_house()
     build_minimal()
+    build_pianos()
 
     valid = param_ids()
     gains = json.load(open(GAINS)) if os.path.exists(GAINS) else {}

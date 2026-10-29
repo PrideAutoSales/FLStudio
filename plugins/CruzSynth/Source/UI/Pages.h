@@ -142,6 +142,33 @@ private:
 };
 
 //==============================================================================
+// The modelled piano: model, tone and the strings, hammer and soundboard controls.
+class PianoPanel : public Panel
+{
+public:
+    explicit PianoPanel (CruzSynthProcessor& p);
+    void resized() override;
+
+private:
+    PowerButton* power; ParamCombo* model; ParamToggle* toFilter;
+    PianoView* view;
+    std::vector<ModKnob*> knobs;
+};
+
+class PianoPage : public juce::Component
+{
+public:
+    explicit PianoPage (CruzSynthProcessor& p);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    PianoPanel piano;
+    MacroPanel macros;
+    juce::Rectangle<int> tipsArea;
+};
+
+//==============================================================================
 class MatrixPage : public juce::Component
 {
 public:

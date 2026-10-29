@@ -60,6 +60,8 @@ enum ModDst
     DstFxEqLowGain, DstFxEqHighGain,
     DstFxFilCutoff, DstFxFilRes, DstFxFilDrive, DstFxFilMix,
     DstFxRevSize, DstFxRevDecay, DstFxRevMix,
+    // Piano (0.4)
+    DstPnoLevel, DstPnoTone,
     DstCount
 };
 

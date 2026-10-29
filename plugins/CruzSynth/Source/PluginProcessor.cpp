@@ -320,7 +320,8 @@ void CruzSynthProcessor::applyRecipe (const juce::String& recipe)
                                    "FxFlaFeedback", "FxFlaMix", "FxPhaFreq", "FxPhaFeedback", "FxPhaMix",
                                    "FxChoDepth", "FxChoMix", "FxDlyFeedback", "FxDlyMix", "FxMbDepth",
                                    "FxEqLowGain", "FxEqHighGain", "FxFilCutoff", "FxFilRes", "FxFilDrive", "FxFilMix",
-                                   "FxRevSize", "FxRevDecay", "FxRevMix" };
+                                   "FxRevSize", "FxRevDecay", "FxRevMix",
+                                   "PnoLevel", "PnoTone" };
     static_assert (std::size (sources) == (size_t) kNumModSources);
     static_assert (std::size (dests) == (size_t) DstCount);
 

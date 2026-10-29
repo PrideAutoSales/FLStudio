@@ -397,6 +397,87 @@ void OscPage::resized()
 }
 
 //==============================================================================
+PianoPanel::PianoPanel (CruzSynthProcessor& p) : Panel ("PIANO")
+{
+    power = &make<PowerButton> (p.apvts, "pno_on");
+    model = &make<ParamCombo> (p.apvts, "pno_model");
+    toFilter = &make<ParamToggle> (p.apvts, "pno_toFilter", "FLT");
+    toFilter->setTooltip ("Send the piano through the synth's filter");
+    view = &make<PianoView> (p);
+    const std::pair<const char*, const char*> controls[] = {
+        { "pno_level", "Level" }, { "pno_tone", "Tone" }, { "pno_dynamics", "Dynamics" }, { "pno_sustain", "Sustain" },
+        { "pno_damper", "Release" }, { "pno_strings", "Strings" }, { "pno_body", "Body" }, { "pno_hammer", "Hammer" },
+        { "pno_width", "Width" } };
+    const char* tips[] = {
+        "Piano volume",
+        "Hammer hardness: darker to brighter",
+        "How much louder and brighter hard notes are than soft ones",
+        "How long the strings ring while a key is held",
+        "How quickly the dampers stop a note after you let go",
+        "Detune between each note's strings: a little for richness, a lot for honky-tonk",
+        "Soundboard colour and the knock of the hammer through the case",
+        "Hammer and action noise",
+        "Stereo spread: low notes left, high notes right, as the player hears it" };
+    int i = 0;
+    for (auto& c : controls)
+    {
+        auto* k = &make<ModKnob> (p, c.first, c.second);
+        k->setTooltip (tips[i++]);
+        knobs.push_back (k);
+    }
+}
+
+void PianoPanel::resized()
+{
+    auto r = getLocalBounds();
+    placePower (*power, r);
+    auto header = r.removeFromTop (kHeader).reduced (8, 3);
+    header.removeFromLeft (70);
+    toFilter->setBounds (header.removeFromRight (40));
+    header.removeFromRight (8);
+    model->setBounds (header.removeFromLeft (200));
+
+    r = r.reduced (8, 6);
+    auto right = r.removeFromRight (juce::jmin (470, r.getWidth() / 2));
+    r.removeFromRight (8);
+    view->setBounds (r);
+    std::vector<juce::Component*> items (knobs.begin(), knobs.end());
+    layoutGrid (right, items, 5, right.getHeight() / 2);
+}
+
+PianoPage::PianoPage (CruzSynthProcessor& p) : piano (p), macros (p)
+{
+    addAndMakeVisible (piano);
+    addAndMakeVisible (macros);
+}
+
+void PianoPage::paint (juce::Graphics& g)
+{
+    drawPanel (g, tipsArea, "PLAYING TIPS");
+    auto r = tipsArea.reduced (14, 0).withTrimmedTop (34);
+    g.setFont (font (12.0f));
+    g.setColour (colours::textDim);
+    const char* lines[] = {
+        "Switch the piano on with the power button. Pick a preset from the Pianos folder for a ready-made sound.",
+        "Turn Osc A off for a pure piano, or leave the oscillators on to layer a pad or synth under it.",
+        "The sustain pedal works. Hold it to let notes ring together the way a real piano does.",
+        "Env 1 still shapes the overall volume: keep its sustain at 100% and its release long so the piano decays naturally.",
+        "Velocity changes both loudness and brightness. Use Dynamics to make the response gentler or more dramatic." };
+    for (auto* line : lines)
+        g.drawText (line, r.removeFromTop (20), juce::Justification::centredLeft);
+}
+
+void PianoPage::resized()
+{
+    auto r = getLocalBounds().reduced (8);
+    piano.setBounds (r.removeFromTop (r.getHeight() * 55 / 100));
+    r.removeFromTop (8);
+    macros.setBounds (r.removeFromBottom (juce::jmin (100, r.getHeight() / 2)));
+    r.removeFromBottom (8);
+    tipsArea = r;
+}
+
+//==============================================================================
 MatrixPage::MatrixPage (CruzSynthProcessor& p) : proc (p)
 {
     rows.resize (kNumModSlots);

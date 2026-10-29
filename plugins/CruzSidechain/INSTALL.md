@@ -36,14 +36,17 @@ delete it first so the new one keeps the same name. Restart FL Studio afterwards
 
 ## 4. Hook up the sidechain (kick ducks the bass)
 
+FL needs two steps: a route, and telling the plugin which track to listen to.
+
 1. Put **Cruz Sidechain** on the mixer track you want ducked, for example the bass.
-2. Click the **kick's** mixer track to select it. Then right-click the small arrow at the
-   bottom of the **bass** track and choose **Sidechain to this track**.
-3. Open Cruz Sidechain and click **Sidechain** at the top. The lamp in the Waveforms panel
-   turns green ("Sidechain signal coming in") when the kick arrives.
-4. If the lamp stays orange, open the plugin's wrapper settings (the gear icon at the top
-   left of the plugin window), go to the **Processing** tab, and set the plugin's second
-   input (the sidechain input) to the kick's mixer track.
+2. Click the **kick's** (or trigger's) mixer track to select it. Then right-click the small
+   arrow at the bottom of the **bass** track and choose **Sidechain to this track**.
+3. Open Cruz Sidechain and click the **gear icon** at the top left of the plugin window.
+   Go to the **Processing** tab. Input 1 is the normal audio and input 2 is the sidechain.
+   Click **input 2** and set the track selector under it to the kick's mixer track.
+4. Click **Sidechain** at the top of Cruz Sidechain and play the song. The lamp in the
+   Waveforms panel turns green ("Sidechain signal coming in") when the kick arrives.
+   The trigger track has to actually play something: an empty pattern sends nothing.
 
 No routing needed for these two:
 

@@ -139,10 +139,13 @@ private:
     {
         const auto aq = std::abs (q);
 
-        if (aq < 1.0e-3)
+        // Below |q| = 1 the Taylor series is accurate to 2e-6 (L) and 2e-5 (dL) and avoids
+        // the exp() call, which is where most samples at normal levels land.
+        if (aq < 1.0)
         {
-            L = q / 3;
-            dL = 1.0 / 3;
+            const auto q2 = q * q;
+            L = q * (1.0 / 3 + q2 * (-1.0 / 45 + q2 * (2.0 / 945 + q2 * (-1.0 / 4725 + q2 * (2.0 / 93555)))));
+            dL = 1.0 / 3 + q2 * (-1.0 / 15 + q2 * (2.0 / 189 + q2 * (-1.0 / 675 + q2 * (2.0 / 10395))));
             return;
         }
 
@@ -279,11 +282,15 @@ struct Formula
 };
 
 // Four tape stocks, from older and easier to saturate to modern high output.
+// The loop widths are narrow because a properly biased machine follows the
+// anhysteretic curve closely: distortion falls about 12 dB for every 6 dB
+// drop in level, so quiet material stays clean and the third harmonic only
+// reaches about 3 % near the tape's maximum output level.
 inline constexpr Formula formulas[] = {
-    { "Vintage", 0.72, 0.55, 0.55, 0.85, 1.25, 2.0 },
-    { "Classic", 0.60, 0.45, 0.50, 1.00, 1.00, 0.0 },
-    { "Hot",     0.48, 0.32, 0.45, 1.10, 0.90, -2.0 },
-    { "Modern",  0.38, 0.22, 0.40, 1.20, 0.80, -4.0 },
+    { "Vintage", 0.72, 0.55, 0.22, 0.85, 1.25, 2.0 },
+    { "Classic", 0.60, 0.45, 0.15, 1.00, 1.00, 0.0 },
+    { "Hot",     0.48, 0.32, 0.12, 1.10, 0.90, -2.0 },
+    { "Modern",  0.38, 0.22, 0.10, 1.20, 0.80, -4.0 },
 };
 
 struct Speed
@@ -388,7 +395,7 @@ public:
 
         // The playback electronics add a little second harmonic on top of the
         // tape's mostly odd harmonics. The DC this creates is removed below.
-        y += 0.04 * y * y;
+        y += 0.012 * y * y;
 
         // DC blocker at about 5 Hz.
         const auto dc = y - dcX + dcR * dcY;
@@ -419,8 +426,8 @@ private:
 class Transport
 {
 public:
-    static constexpr double centreDelaySeconds = 0.0025;
-    static constexpr double maxDepthSeconds = 0.0023;
+    static constexpr double centreDelaySeconds = 0.002;
+    static constexpr double maxDepthSeconds = 0.0019; // full wow at 7.5 ips peaks just under this
 
     void prepare (double sampleRate)
     {
@@ -488,7 +495,7 @@ inline DerivedParameters derive (const Settings& s)
     // Under biasing widens the loop and drives harder, over biasing cleans up.
     d.drive = std::clamp (f.drive * (1 - 0.25 * s.bias), 0.05, 0.95);
     d.saturation = f.saturation;
-    d.width = std::clamp (f.width - 0.25 * s.bias, 0.05, 0.95);
+    d.width = std::clamp (f.width - (s.bias < 0 ? 0.3 : 0.08) * s.bias, 0.02, 0.95);
     d.hfScale = f.hfScale;
     d.bumpScale = f.bumpScale;
 

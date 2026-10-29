@@ -1,0 +1,62 @@
+name: Build Cruz Drums sample pack
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "samples/CruzDrums/**"
+      - ".github/workflows/build-samples.yml"
+  pull_request:
+    paths:
+      - "samples/CruzDrums/**"
+      - ".github/workflows/build-samples.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install numpy scipy soundfile
+
+      - name: Render and check every sample
+        working-directory: samples/CruzDrums
+        run: python generate.py "../../dist/Cruz Drums"
+
+      - name: Package
+        run: |
+          mv "dist/Cruz Drums/report.csv" dist/Cruz-Drums-report.csv
+          cp samples/CruzDrums/PACK_README.txt "dist/Cruz Drums/README.txt"
+          cd dist && zip -qr Cruz-Drums.zip "Cruz Drums"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cruz-Drums
+          path: |
+            dist/Cruz-Drums.zip
+            dist/Cruz-Drums-report.csv
+
+      - name: Publish to the "samples" release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view samples > /dev/null 2>&1 || gh release create samples \
+            --target "$GITHUB_SHA" \
+            --title "Cruz Drums sample pack" \
+            --notes "576 original drum one-shots (8 genres x kicks, snares, claps, rims, hats, percs), 24-bit 48 kHz WAV. See README.txt inside the zip."
+          gh release upload samples dist/Cruz-Drums.zip dist/Cruz-Drums-report.csv --clobber

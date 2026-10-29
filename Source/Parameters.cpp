@@ -84,6 +84,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     const auto dbText = [] (float v, int) { return juce::String (v, 2) + " dB"; };
     const auto qText = [] (float v, int) { return juce::String (v, 3); };
     const auto msText = [] (float v, int) { return juce::String (v, v < 10.0f ? 1 : 0) + " ms"; };
+    const auto thresholdText = [dbText] (float v, int length) { return isAutoThreshold (v) ? juce::String ("Auto") : dbText (v, length); };
 
     for (int b = 0; b < numBands; ++b)
     {
@@ -117,8 +118,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
             juce::AudioParameterFloatAttributes().withStringFromValueFunction (dbText)));
         group->addChild (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { bandId (b, BandField::threshold), 1 }, name + "Threshold",
-            juce::NormalisableRange<float> { (float) minThresholdDb, (float) maxThresholdDb, 0.1f }, -24.0f,
-            juce::AudioParameterFloatAttributes().withStringFromValueFunction (dbText)));
+            juce::NormalisableRange<float> { (float) minThresholdDb, (float) maxThresholdDb, 0.1f }, (float) maxThresholdDb,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction (thresholdText)
+                                                 .withValueFromStringFunction ([] (const juce::String& text)
+                                                 {
+                                                     return text.trim().startsWithIgnoreCase ("a") ? (float) maxThresholdDb
+                                                                                                   : text.getFloatValue();
+                                                 })));
         group->addChild (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { bandId (b, BandField::attack), 1 }, name + "Attack",
             logRange ((float) minAttackMs, (float) maxAttackMs), 10.0f,
@@ -163,7 +169,8 @@ cruz::dsp::BandParams BandRefs::read() const noexcept
 
 cruz::dsp::DynamicParams BandRefs::dynamics() const noexcept
 {
-    return { dynamic->load() >= 0.5f, range->load(), threshold->load(), attack->load(), release->load() };
+    const float thresholdDb = threshold->load();
+    return { dynamic->load() >= 0.5f, range->load(), thresholdDb, attack->load(), release->load(), isAutoThreshold (thresholdDb) };
 }
 
 cruz::dsp::Placement BandRefs::placement() const noexcept

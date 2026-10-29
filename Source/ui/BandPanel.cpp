@@ -52,6 +52,7 @@ BandPanel::BandPanel (CruzEQAudioProcessor& p)
     setUpLabel (releaseLabel, "Release");
 
     dynamicButton.setTooltip ("Let this band's gain follow the music: it moves by up to Range while the sound around its frequency is above Threshold");
+    thresholdSlider.setTooltip ("Turn fully up for Auto: the threshold follows the band's own level, so the band reacts to whatever stands out");
 
     removeButton.onClick = [this]
     {
@@ -148,7 +149,7 @@ void BandPanel::setBand (int index)
         gainSlider.setDoubleClickReturnValue (true, 0.0);
         qSlider.setDoubleClickReturnValue (true, 1.0);
         rangeSlider.setDoubleClickReturnValue (true, -6.0);
-        thresholdSlider.setDoubleClickReturnValue (true, -24.0);
+        thresholdSlider.setDoubleClickReturnValue (true, cruz::dsp::maxThresholdDb); // Auto
         attackSlider.setDoubleClickReturnValue (true, 10.0);
         releaseSlider.setDoubleClickReturnValue (true, 150.0);
     }

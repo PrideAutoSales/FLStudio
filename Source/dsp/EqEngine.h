@@ -29,6 +29,10 @@ struct DynamicParams
     double thresholdDb = -24.0;
     double attackMs = 10.0;
     double releaseMs = 150.0;
+    // When on, the threshold follows the band's own long-term level instead
+    // of thresholdDb, so the band reacts to whatever stands out from the rest
+    // of the sound at its frequency.
+    bool autoThreshold = false;
 };
 
 inline constexpr double minDynamicRangeDb = -30.0, maxDynamicRangeDb = 30.0;
@@ -36,6 +40,12 @@ inline constexpr double minThresholdDb = -60.0, maxThresholdDb = 0.0;
 inline constexpr double minAttackMs = 1.0, maxAttackMs = 200.0;
 inline constexpr double minReleaseMs = 10.0, maxReleaseMs = 2000.0;
 inline constexpr double dynamicKneeDb = 6.0;
+// Auto threshold: how far above the band's average level it sits, how slowly
+// that average follows the sound, and the level below which the average is
+// left alone (so pauses do not pull it down).
+inline constexpr double autoThresholdOffsetDb = 2.0;
+inline constexpr double autoThresholdSeconds = 1.5;
+inline constexpr double autoThresholdFloorDb = -70.0;
 
 inline bool shapeUsesDynamics (Shape s) noexcept { return shapeUsesGain (s); }
 
@@ -331,6 +341,8 @@ private:
         BiquadCoeffs detector;
         std::array<BiquadState, maxChannels> detectorState {};
         double envelope = 0.0;
+        double averageLevelDb = 0.0;   // for the auto threshold
+        bool hasAverageLevel = false;
         double dynamicDb = 0.0;        // smoothed gain move, updated every 32 samples
         double appliedDynamicDb = 0.0; // the gain move the coefficients were made with
 
@@ -341,6 +353,7 @@ private:
 
             detectorState.fill ({});
             envelope = 0.0;
+            hasAverageLevel = false;
         }
 
         // Filters `numChannels` buffers in place. `inputs` is the matching
@@ -367,7 +380,7 @@ private:
                 // A peak detector that falls back at the release speed reads
                 // the level; the gain then moves towards its new value at the
                 // attack speed (more action) or release speed (less action).
-                const auto& d = target.dynamics;
+                auto d = target.dynamics;
                 const double attackSeconds = 0.001 * std::clamp (d.attackMs, minAttackMs, maxAttackMs);
                 const double releaseSeconds = 0.001 * std::clamp (d.releaseMs, minReleaseMs, maxReleaseMs);
                 const double fall = std::exp (-1.0 / (releaseSeconds * sampleRate));
@@ -383,7 +396,24 @@ private:
                     peak = std::max (peak, envelope);
                 }
 
-                targetDb = dynamicGainDb (d, 20.0 * std::log10 (peak + 1.0e-30));
+                const double levelDb = 20.0 * std::log10 (peak + 1.0e-30);
+
+                if (d.autoThreshold)
+                {
+                    if (levelDb > autoThresholdFloorDb)
+                    {
+                        if (! hasAverageLevel)
+                            averageLevelDb = levelDb;
+                        else
+                            averageLevelDb += (1.0 - std::exp (-n / (autoThresholdSeconds * sampleRate))) * (levelDb - averageLevelDb);
+
+                        hasAverageLevel = true;
+                    }
+
+                    d.thresholdDb = hasAverageLevel ? averageLevelDb + autoThresholdOffsetDb : maxThresholdDb;
+                }
+
+                targetDb = dynamicGainDb (d, levelDb);
                 const bool moreAction = std::abs (targetDb) > std::abs (dynamicDb);
                 const double coeff = std::exp (-n / ((moreAction ? attackSeconds : releaseSeconds) * sampleRate));
                 dynamicDb = targetDb + coeff * (dynamicDb - targetDb);

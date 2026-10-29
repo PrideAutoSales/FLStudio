@@ -8,10 +8,14 @@
 // The main EQ view: frequency grid, live analyzer, the EQ curve and one
 // draggable dot per band.
 //
-// Mouse: double-click empty space to add a band, drag a dot to move it
-// (vertical drag sets Q on cuts, notches and band passes), scroll over a dot
-// to change Q, hold Shift for fine moves, Alt-click a dot to bypass it,
-// double-click a dot to remove it, right-click a dot for more options.
+// Mouse: click empty space to add a band (its shape depends on where: cuts at
+// the far ends, shelves just inside them, bells in between; Alt-click adds a
+// dynamic band), drag a dot to move it (vertical drag sets Q on cuts, notches
+// and band passes), scroll over a dot to change Q (Cmd-scroll for gain,
+// Alt-scroll for dynamic range), hold Shift for fine moves, Alt-click a dot to
+// bypass it, double-click a dot to remove it, right-click a dot for more
+// options. The selected bell, shelf or tilt has a small handle on its stem:
+// drag it to make the band dynamic and set how far it moves.
 class EqDisplay final : public juce::Component,
                         private juce::Timer
 {
@@ -50,13 +54,21 @@ private:
     void updateAnalyzers();
     juce::Point<float> nodePosition (int band) const noexcept;
     int nodeAt (juce::Point<float>) const noexcept;
+    bool hasRangeHandle (int band) const noexcept;
+    juce::Point<float> rangeHandlePosition (int band) const noexcept;
+    bool rangeHandleAt (juce::Point<float>) const noexcept;
+    double dbPerPixel() const noexcept;
 
     juce::RangedAudioParameter& param (int band, Params::BandField) const;
     float paramValue (int band, Params::BandField) const;
     void setParam (int band, Params::BandField, float value);
     void setParamGesture (int band, Params::BandField, float value);
+    void resetParam (int band, Params::BandField);
     void beginDrag (int band, juce::Point<float> position, bool fine);
-    void createBandAt (juce::Point<float>);
+    void startBandDrag (int band, juce::Point<float> position, bool fine);
+    void makeDynamic (int band);
+    int createBandAt (juce::Point<float>, bool dynamic);
+    void updatePreview (juce::Point<float>);
     void removeBand (int band);
     void showBandMenu (int band);
     void select (int band);
@@ -66,6 +78,7 @@ private:
     void drawCurves (juce::Graphics&, juce::Rectangle<float> area);
     void drawLegend (juce::Graphics&, juce::Rectangle<float> area);
     void drawNodes (juce::Graphics&);
+    void drawPreview (juce::Graphics&, juce::Rectangle<float> area);
     void drawBandInfo (juce::Graphics&, juce::Rectangle<float> area);
 
     CruzEQAudioProcessor& processor;
@@ -104,6 +117,22 @@ private:
 
     int selected = -1, hovered = -1, dragging = -1;
 
+    // The band the last click added, so the second click of a double-click
+    // does not add another band or remove the new one.
+    int lastCreated = -1;
+
+    // Dragging the selected band's dynamic range handle.
+    int draggingRange = -1;
+    bool rangeHandleHovered = false, rangeDragTurnedOn = false;
+    double rangeAnchorDb = 0.0;
+    juce::Point<float> rangeAnchorMouse;
+
+    // What a click on empty space would add, drawn faintly under the mouse.
+    bool showPreview = false;
+    juce::Point<float> previewPoint;
+    cruz::dsp::BandParams previewParams;
+    std::vector<float> previewCurve;
+
     struct DragAnchor
     {
         juce::Point<float> mouse;
@@ -113,6 +142,13 @@ private:
 
     float rangeDb = 12.0f;
 
+public:
+    // The shape a click adds at this frequency.
+    static cruz::dsp::Shape shapeForClick (double hz) noexcept;
+    static constexpr double lowCutBelowHz = 30.0, lowShelfBelowHz = 150.0;
+    static constexpr double highShelfAboveHz = 5000.0, highCutAboveHz = 14000.0;
+
+private:
     static constexpr double minDisplayHz = 10.0;
     static constexpr double maxDisplayHz = 30000.0;
     static constexpr float analyzerFloorDb = -90.0f;

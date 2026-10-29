@@ -22,16 +22,20 @@ appear under the **Artifacts** section of each run on the **Actions** tab.
    - 3a (done): per-band stereo placement (left, right, mid, side), slopes for
      shelves, notches and band passes, a flat tilt shape, auto gain and gain scale.
    - 3b (done): dynamic EQ on every bell, shelf and tilt band.
-   - 3c (this version): linear phase and natural phase modes.
+   - 3c (done): linear phase and natural phase modes.
    - 3d: EQ match and spectral dynamics.
 4. **Polish and benchmark**: CPU, latency and sound compared side by side in real sessions.
 
 ## Using the EQ
 
-- **Add a band:** double-click anywhere on the display.
+- **Add a band:** click anywhere on the display (keep holding to drag it into place).
+  The shape depends on where you click: a low cut at the very bottom (below 30 Hz),
+  a low shelf just above it (up to 150 Hz), bells through the middle, a high shelf
+  from 5 kHz and a high cut above 14 kHz. A faint preview and label under the mouse
+  show what a click will add. Option-click adds a dynamic band.
 - **Move a band:** drag its dot. Left and right is frequency. Up and down is gain, or Q
   for cuts, notches and band passes. Hold Shift for fine moves.
-- **Change Q:** scroll over a dot, or use the Q knob.
+- **Change Q:** scroll over a dot, or use the Q knob. Cmd-scroll changes gain.
 - **Bypass a band:** Option-click its dot, or tick Bypass.
 - **Remove a band:** double-click its dot, or click Remove.
 - **More options:** right-click a dot to change its shape, slope or stereo placement.
@@ -44,9 +48,14 @@ appear under the **Artifacts** section of each run on the **Actions** tab.
   amount it applies is shown next to the switch.
 - **Gain Scale:** scales every band's gain at once (100% is as set, 0% is flat,
   200% doubles it).
-- **Dynamic EQ:** tick Dynamic on a bell, shelf or tilt band (or right-click its dot).
-  While the sound around the band's frequency is above **Threshold**, the band's gain
-  moves by up to **Range**: a negative range cuts when it gets loud (for harsh notes,
+- **Dynamic EQ:** select a bell, shelf or tilt band and drag the small diamond under
+  its dot. Dragging it makes the band dynamic, and where you leave it is how far the
+  band can move. Option-scroll over a dot does the same, and the Dynamic box and the
+  right-click menu still work. By default the **Threshold** is **Auto**: it follows the
+  band's own level, so the band reacts to whatever stands out from the rest of the
+  sound, with nothing to set. Turn the Threshold knob down from Auto to set a fixed
+  level instead. While the sound around the band's frequency is above the threshold,
+  the band's gain moves by up to **Range**: a negative range cuts when it gets loud (for harsh notes,
   sibilance or boomy bass), a positive range boosts when it gets loud. **Attack** and
   **Release** set how fast it reacts and recovers. The selected band shows the area it
   can move through, a line from its dot to the end of the range, and a small dot where

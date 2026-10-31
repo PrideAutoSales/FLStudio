@@ -90,6 +90,29 @@ namespace
         return db;
     }
 
+    // How loud a strike is, in dB below a full-velocity one. A real piano spans
+    // about 40 dB from its softest touch to fortissimo, and most of that range sits
+    // in the lower half of the key's travel: velocity 64 plays about 11 dB down,
+    // 32 about 19 dB and 8 about 29 dB at the default Dynamics. Dynamics sets the
+    // span (0 squeezes it to 12 dB, 0.5 is 40 dB, 1 is 68 dB). The treble has a
+    // little less range, as its short strings take less from a hard blow.
+    float velocityDb (float velocity, float dynamics, float note) noexcept
+    {
+        const float range = (12.0f + 56.0f * clamp01 (dynamics))
+                            * (1.0f - 0.25f * clamp01 ((note - 72.0f) / 24.0f));
+        return -range * (1.0f - std::pow (juce::jlimit (1.0f / 127.0f, 1.0f, velocity), 0.45f));
+    }
+
+    // The hammer's brightness for a strike: the felt is soft at the surface and
+    // hard underneath, so a light blow only touches the soft layer. Brightness
+    // runs from `soft` at the lightest touch to `top` at full velocity, evenly in
+    // octaves, with `q` below 1 bringing the hard sound in sooner.
+    float hammerAt (float top, float soft, float v, float q) noexcept
+    {
+        soft = juce::jmin (soft, top);
+        return soft * std::pow (top / soft, std::pow (v, q));
+    }
+
     float hashNote (int note, int salt) noexcept
     {
         juce::uint32 h = (juce::uint32) (note * 2654435761u) ^ (juce::uint32) (salt * 40503u);
@@ -181,9 +204,8 @@ void Voice::strike (float pitch, float velocity, const Settings& s)
     const float notePan = juce::jlimit (-1.0f, 1.0f, (n - 64.0f) / 40.0f) * s.width * 0.75f;
     panGains (notePan, baseL, baseR);
 
-    // Loudness: a gentle curve from the dynamics setting, and the treble a little quieter.
-    const float velExp = (0.3f + 1.2f * s.dynamics) * (1.0f - 0.4f * clamp01 ((n - 72.0f) / 24.0f));
-    const float velGain = 0.03f + 0.97f * std::pow (v, velExp);
+    // Loudness follows a real piano's touch (see velocityDb).
+    const float velGain = dbToGain (velocityDb (v, s.dynamics, n));
     const float keyGain = dbToGain (n > 60.0f ? -0.1f * (n - 60.0f) : -0.1f * (60.0f - n));
     const float sustainMul = std::exp2 ((0.5f - s.sustain) * 3.0f);
     const float maxF = juce::jmin (sr * 0.45f, 18000.0f);
@@ -201,8 +223,11 @@ void Voice::strike (float pitch, float velocity, const Settings& s)
         if (n < 33.0f) logB += 0.25f * (33.0f - n) / 12.0f;
         const float B = std::pow (10.0f, logB) * M.inharm;
 
-        // Hammer: harder and brighter with velocity, the tone knob and higher keys.
-        const float hammerHz = juce::jmax (f0 * 1.5f, M.hammerHz * std::pow (juce::jmax (0.05f, v), 0.74f) * std::exp2 (s.tone * 1.5f));
+        // Hammer: harder and brighter with velocity, the tone knob and higher keys. A
+        // pianissimo blow is dull at any setting, about 650 Hz at middle C.
+        const float hardHz = M.hammerHz * std::exp2 (s.tone * 1.5f);
+        const float softHz = 650.0f * std::exp2 ((n - 60.0f) / 48.0f);
+        const float hammerHz = juce::jmax (f0 * 1.5f, hammerAt (hardHz, softHz, v, 0.75f));
         const float strike = M.strikePos + 0.012f * (hashNote (key, 2) - 0.5f) + 0.0006f * (n - 60.0f);
         const float bodyAmt = s.body * 2.0f * M.body;
         // Short treble strings sound almost pure: their overtones fall away faster.
@@ -388,9 +413,11 @@ void Voice::strikeGrand (const GrandData& D, float pitch, float velocity, const 
     const float strength = velocityToStrength (v) * (float) (layers - 1);
     const int layer = juce::jlimit (0, layers - 1, juce::roundToInt (strength + s.tone * 4.0f));
     const auto& R = D.record (key, layer);
-    // Dynamics: 0.5 keeps the real piano's range, lower squeezes it, higher widens it.
+    // The recordings were levelled closer together than a piano sounds in the room,
+    // so the level comes from the same touch curve as the other models, measured
+    // down from this key's hardest strike. The recorded strike still sets the tone.
     const float top = D.levelAt (key, (float) (layers - 1));
-    const float targetDb = top + (D.levelAt (key, strength) - top) * (0.4f + 1.2f * s.dynamics);
+    const float targetDb = top + velocityDb (v, s.dynamics, pitch);
     const float gain = dbToGain (targetDb - R.loudness) * kGrandLevel;
 
     const float sustainMul = std::exp2 ((0.5f - s.sustain) * 2.0f);

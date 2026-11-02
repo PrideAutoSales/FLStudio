@@ -2,12 +2,14 @@
 #include "GrandData.h"
 #include <juce_dsp/juce_dsp.h>
 #include <cmath>
+#include <array>
+#include <atomic>
 
 namespace cs::piano
 {
 juce::StringArray modelNames()
 {
-    return { "Concert Grand", "Bright Grand", "Upright", "Felt Piano", "Tine EP", "Reed EP" };
+    return { "Concert Grand", "Bright Grand", "Upright", "Felt Piano", "Tine EP", "Reed EP", "Bass Guitar" };
 }
 
 juce::String modelDescription (int m)
@@ -20,6 +22,7 @@ juce::String modelDescription (int m)
         case Felt:         return "Felt-muted piano: soft hammers, a close and intimate tone with plenty of action noise";
         case TineEP:       return "Tine electric piano: bell-like attack that barks when played hard";
         case ReedEP:       return "Reed electric piano: hollow, reedy tone with a gritty bite on hard notes";
+        case BassGuitar:   return "Measured from a real fingered bass: every note at 4 strengths, 4 takes, the finger release";
         default: return {};
     }
 }
@@ -65,6 +68,7 @@ namespace
             { false, 0.125f, 1500.0f, 1.35f, 105.0f, 1.6f, 0.8f, 1.35f, 0.0f, 1.0f, 1.3f, 0.5f, 650.0f, 1.8f, 1.3f, 1.2f, 1.3f },     // Felt Piano
             { true, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.5f, 0.0f, 0.35f, 3200.0f, 0.0f, 0.8f, 0.0f, 1.0f },            // Tine EP
             { true, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.5f, 0.0f, 0.3f, 2400.0f, 0.0f, 0.7f, 0.0f, 1.0f },             // Reed EP
+            { false, 0.122f, 5200.0f, 1.19f, 97.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1400.0f, 1.0f, 1.0f, 1.0f, 1.0f },    // Bass Guitar (measured; this row is only a fallback)
         };
         return data[juce::jlimit (0, NumModels - 1, m)];
     }
@@ -176,7 +180,9 @@ void Voice::retune (float semis)
 void Voice::strike (float pitch, float velocity, const Settings& s)
 {
     const auto& M = modelData (s.model);
-    const GrandData* grand = s.model == ConcertGrand ? GrandData::get() : nullptr;
+    const GrandData* grand = s.model == ConcertGrand ? GrandData::get()
+                           : s.model == BassGuitar   ? GrandData::bass()
+                                                     : nullptr;
     if ((grand != nullptr) != measured)
         count = 0; // the other engine's resonators can't be carried over
     electric = M.electric;
@@ -189,8 +195,16 @@ void Voice::strike (float pitch, float velocity, const Settings& s)
     refreshRotations();
     bendSemis = 0.0f;
     residual = nullptr;
+    releaseSample = nullptr;
+    nextRelease = nullptr;
     overtoneTable = nullptr;
     measured = grand != nullptr;
+    bass = measured && s.model == BassGuitar;
+    if (bass)
+    {
+        strikeBass (*grand, pitch, velocity, s);
+        return;
+    }
     if (grand != nullptr)
     {
         strikeGrand (*grand, pitch, velocity, s);
@@ -427,28 +441,7 @@ void Voice::strikeGrand (const GrandData& D, float pitch, float velocity, const 
 
     const auto* modes = D.modes.data() + R.firstMode;
     for (int m = 0; m < R.numModes && count < kMax - 8; ++m)
-    {
-        const auto& md = modes[m];
-        const float f = (md.centre + md.offset * detune) * ratio;
-        if (f <= 10.0f || f >= maxF)
-            continue;
-        // Only the strings' ringing follows Sustain; the fast attack modes keep their shape.
-        const float decay = md.decay < 15.0f ? md.decay * sustainMul : md.decay;
-        const int i = count++;
-        freq[i] = f;
-        radius[i] = std::exp (-decay / sr);
-        const float w = kTwoPi * f / sr;
-        cr[i] = radius[i] * std::cos (w);
-        ci[i] = radius[i] * std::sin (w);
-        re[i] = 1.0f;
-        im[i] = 0.0f;
-        const float midRe = 0.5f * (md.lRe + md.rRe), midIm = 0.5f * (md.lIm + md.rIm);
-        const float sideRe = 0.5f * (md.lRe - md.rRe) * side, sideIm = 0.5f * (md.lIm - md.rIm) * side;
-        gl[i] = (midRe + sideRe) * gain;
-        gli[i] = (midIm + sideIm) * gain;
-        gr[i] = (midRe - sideRe) * gain;
-        gri[i] = (midIm - sideIm) * gain;
-    }
+        addMode (modes[m], ratio, detune, side, sustainMul, gain, maxF);
     stringCount = count;
     padModes();
 
@@ -458,8 +451,10 @@ void Voice::strikeGrand (const GrandData& D, float pitch, float velocity, const 
     attackCurve = R.attack;
     attackEnd = R.attackTime * D.sampleRate;
     attackPos = 0.0;
-    residual = R.residualLength > 1 ? D.residual.data() + 2 * (size_t) R.firstResidual : nullptr;
+    residual = R.residualLength > 1 ? D.residual.data() + (size_t) D.channels * (size_t) R.firstResidual : nullptr;
     residualLength = R.residualLength;
+    residualChannels = D.channels;
+    residualScale = R.residualScale;
     residualPos = 0.0;
     residualStep = (double) ratio * D.sampleRate / sr;
     residualLowGain = gain * 2.0f * s.body;
@@ -477,6 +472,237 @@ void Voice::strikeGrand (const GrandData& D, float pitch, float velocity, const 
     seed = 0x9e3779b9u ^ (juce::uint32) (juce::roundToInt (pitch) * 7919);
     cullCounter = 0;
     silentRun = 0;
+}
+
+namespace
+{
+    // The take each key plays next: repeated notes cycle through the four recorded plucks.
+    std::array<std::atomic<unsigned int>, 128> nextTake {};
+}
+
+void Voice::strikeBass (const GrandData& D, float pitch, float velocity, const Settings& s)
+{
+    const float v = clamp01 (velocity);
+    const int key = D.nearestKey (pitch);
+    const int layers = D.numLayers;
+    const int take = (int) (nextTake[(size_t) juce::jlimit (0, 127, juce::roundToInt (pitch))]
+                                .fetch_add (1u, std::memory_order_relaxed) % (unsigned int) D.numTakes);
+
+    // Where the velocity falls among the recorded plucks (p, mp, mf, f), each at the
+    // middle of the range its library plays it for: 16, 48, 80 and 112.
+    const float vel127 = v * 127.0f;
+    const float pos = juce::jlimit (0.0f, (float) (layers - 1), (vel127 - 16.0f) / 32.0f);
+    // Tone plays a harder or softer pluck's sound at the same level.
+    const float tonePos = juce::jlimit (0.0f, (float) (layers - 1), pos + s.tone * 1.5f);
+    const int layer = juce::jlimit (0, layers - 1, juce::roundToInt (tonePos));
+    const int other = tonePos >= (float) layer ? juce::jmin (layer + 1, layers - 1) : juce::jmax (layer - 1, 0);
+    const float morph = std::abs (tonePos - (float) layer);
+    const auto& R = D.record (key, layer, take);
+    const auto& R2 = D.record (key, other, take);
+
+    // The level follows the recordings between the softest and hardest plucks, keeps
+    // falling below the softest (about 15 dB more by velocity 1) and rises a little
+    // above the hardest. Dynamics scales that span; 0.5 plays it as recorded. Each take
+    // keeps its own small difference in level from the others.
+    const float top = D.levelAt (key, (float) (layers - 1));
+    float below = D.levelAt (key, pos) - top;
+    if (vel127 < 16.0f)
+        below -= 15.0f * (1.0f - vel127 / 16.0f);
+    else if (vel127 > 112.0f)
+        below += 1.5f * (vel127 - 112.0f) / 15.0f;
+    const float targetDb = top + below * juce::jlimit (0.0f, 2.0f, s.dynamics * 2.0f);
+    const float gain = dbToGain (targetDb - R.loudness);
+
+    // Tuned exactly: the key's average over its recordings goes to equal temperament,
+    // and each take keeps its own few cents from that, as a fretted note does.
+    const float keyF0 = D.keyF0[(size_t) key];
+    const float takeCents = juce::jlimit (-4.0f, 4.0f, 1200.0f * std::log2 (R.f0 / keyF0));
+    const float ratio = 440.0f * std::exp2 ((pitch - 69.0f) / 12.0f + takeCents / 1200.0f) / R.f0;
+
+    // Between two recorded strengths the tone moves smoothly: each overtone's level
+    // moves toward its level in the neighbouring strength's same take, with the
+    // overall level left to the line above.
+    const auto* ot = D.overtones.data() + R.firstOvertone;
+    const auto* ot2 = D.overtones.data() + R2.firstOvertone;
+    constexpr int kShift = 160;
+    float shiftDb[kShift] {};
+    const int numOt = juce::jmin (R.numOvertones, kShift);
+    if (morph > 0.0f && other != layer)
+    {
+        float wSum = 0.0f, dSum = 0.0f;
+        int j = 0;
+        for (int o = 0; o < numOt; ++o)
+        {
+            while (j + 1 < R2.numOvertones && std::abs (ot2[j + 1].freq - ot[o].freq) < std::abs (ot2[j].freq - ot[o].freq))
+                ++j;
+            const bool same = R2.numOvertones > 0 && std::abs (ot2[j].freq - ot[o].freq) < 0.3f * R.f0;
+            shiftDb[o] = same ? juce::jlimit (-12.0f, 12.0f, morph * (ot2[j].level - ot[o].level)) : 0.0f;
+            const float w = dbToGain (2.0f * ot[o].level);
+            wSum += w;
+            dSum += w * shiftDb[o];
+        }
+        const float mean = wSum > 0.0f ? dSum / wSum : 0.0f;
+        for (int o = 0; o < numOt; ++o)
+            shiftDb[o] -= mean;
+    }
+
+    const float sustainMul = std::exp2 ((0.5f - s.sustain) * 2.0f);
+    const float detune = s.strings / 0.3f;   // 0.3 is the bass as recorded
+    const float maxF = juce::jmin (sr * 0.45f, 20000.0f);
+    const auto* modes = D.modes.data() + R.firstMode;
+    for (int m = 0; m < R.numModes && count < kMax - 8; ++m)
+    {
+        const auto& md = modes[m];
+        float g = gain;
+        if (morph > 0.0f)
+        {
+            // the overtone this mode belongs to (the table is sorted by frequency)
+            int lo = 0, hi = numOt - 1;
+            while (lo < hi)
+            {
+                const int mid = (lo + hi) / 2;
+                if (ot[mid].freq < md.centre) lo = mid + 1; else hi = mid;
+            }
+            if (numOt > 0 && ot[lo].freq == md.centre)
+                g *= dbToGain (shiftDb[lo]);
+        }
+        // recorded through the amp in mono: no stereo side to spread
+        addMode (md, ratio, detune, 0.0f, sustainMul, g, maxF);
+    }
+    stringCount = count;
+    padModes();
+
+    // The modes swell in along the measured curve while the recorded pluck plays;
+    // Body sets its low part (the string's thump), Hammer its high part (the finger
+    // and the frets).
+    attackCurve = R.attack;
+    attackEnd = R.attackTime * D.sampleRate;
+    attackPos = 0.0;
+    residual = R.residualLength > 1 ? D.residual.data() + (size_t) D.channels * (size_t) R.firstResidual : nullptr;
+    residualLength = R.residualLength;
+    residualChannels = D.channels;
+    residualScale = R.residualScale;
+    residualPos = 0.0;
+    residualStep = (double) ratio * D.sampleRate / sr;
+    residualLowGain = gain * 2.0f * s.body;
+    residualHighGain = gain * 2.0f * s.hammer;
+    residualSplit = 1.0f - std::exp (-kTwoPi * 500.0f / sr);
+    residualLowL = residualLowR = 0.0f;
+
+    // The release this take will end with.
+    releaseData = &D;
+    nextRelease = D.releases.empty() ? nullptr : &D.releases[(size_t) (key * D.numTakes + take)];
+    releaseStep = residualStep;
+
+    overtoneTable = ot;
+    numOvertones = R.numOvertones;
+    overtoneRatio = ratio;
+    overtoneGain = gain;
+
+    strikeLevel = dbToGain (targetDb);
+    noiseEnv = 0.0f;
+    seed = 0x9e3779b9u ^ (juce::uint32) (juce::roundToInt (pitch) * 7919);
+    cullCounter = 0;
+    silentRun = 0;
+}
+
+float Voice::stringLevel() const noexcept
+{
+    // Each overtone's modes summed as they stand now (they beat and cancel), then the
+    // overtones' powers added: the RMS level the strings are sounding at.
+    constexpr int kGroups = 192;
+    float key[kGroups], lRe[kGroups], lIm[kGroups], rRe[kGroups], rIm[kGroups];
+    int groups = 0;
+    for (int i = 0; i < count; ++i)
+    {
+        int j = 0;
+        while (j < groups && key[j] != centre[i])
+            ++j;
+        if (j == groups)
+        {
+            if (groups == kGroups)
+                continue;
+            key[j] = centre[i];
+            lRe[j] = lIm[j] = rRe[j] = rIm[j] = 0.0f;
+            ++groups;
+        }
+        lRe[j] += re[i] * gl[i] - im[i] * gli[i];
+        lIm[j] += re[i] * gli[i] + im[i] * gl[i];
+        rRe[j] += re[i] * gr[i] - im[i] * gri[i];
+        rIm[j] += re[i] * gri[i] + im[i] * gr[i];
+    }
+    float power = 0.0f;
+    for (int j = 0; j < groups; ++j)
+        power += (lRe[j] * lRe[j] + lIm[j] * lIm[j] + rRe[j] * rRe[j] + rIm[j] * rIm[j]) * 0.25f;
+    return std::sqrt (power);
+}
+
+void Voice::releaseBass (const Settings& s)
+{
+    // The finger comes down on the string. What the string was still sounding gives way
+    // to the recorded release (the string being damped and the finger on it), played at
+    // the level the string had, so a note held long ends quietly. Release (the damper
+    // setting) at 0.5 is the recording; higher lets the string ring on and fades the
+    // finger out, lower stops it sooner. Hammer sets the finger noise.
+    const float damp = clamp01 (s.damper);
+    if (nextRelease != nullptr && releaseData != nullptr && nextRelease->length > 1)
+    {
+        const float level = stringLevel();
+        const float mul = clamp01 (2.0f - 2.0f * damp) * 2.0f * s.hammer;
+        releaseGain = juce::jmin (level / dbToGain (nextRelease->level), 2.0f * overtoneGain) * mul * nextRelease->scale;
+        if (releaseGain > 1.0e-7f)
+        {
+            releaseSample = releaseData->releaseSamples.data() + (size_t) releaseData->channels * (size_t) nextRelease->first;
+            releaseLength = nextRelease->length;
+            releasePos = 0.0;
+        }
+    }
+    const float fade = juce::jlimit (20.0f, 6000.0f, 1500.0f * std::exp2 ((0.5f - damp) * 12.0f));
+    addDecay (fade, 0.0f);
+}
+
+void Voice::renderRelease (float* bufL, float* bufR, int n) noexcept
+{
+    const int ch = releaseData->channels, rOff = ch - 1;
+    for (int k = 0; k < n; ++k)
+    {
+        const int idx = (int) releasePos;
+        if (idx + 1 >= releaseLength)
+        {
+            releaseSample = nullptr;
+            return;
+        }
+        const float t = (float) (releasePos - (double) idx) * releaseGain;
+        const float u = releaseGain - t;
+        const auto* p = releaseSample + ch * idx;
+        bufL[k] += (float) p[0] * u + (float) p[ch] * t;
+        bufR[k] += (float) p[rOff] * u + (float) p[ch + rOff] * t;
+        releasePos += releaseStep;
+    }
+}
+
+void Voice::addMode (const GrandData::Mode& md, float ratio, float detune, float side, float sustainMul, float gain, float maxF) noexcept
+{
+    const float f = (md.centre + md.offset * detune) * ratio;
+    if (f <= 10.0f || f >= maxF || count >= kMax)
+        return;
+    // Only the strings' ringing follows Sustain; the fast attack modes keep their shape.
+    const float decay = md.decay < 15.0f ? md.decay * sustainMul : md.decay;
+    const int i = count++;
+    freq[i] = f;
+    centre[i] = md.centre * ratio;
+    radius[i] = std::exp (-decay / sr);
+    const float w = kTwoPi * f / sr;
+    cr[i] = radius[i] * std::cos (w);
+    ci[i] = radius[i] * std::sin (w);
+    re[i] = 1.0f;
+    im[i] = 0.0f;
+    const float midRe = 0.5f * (md.lRe + md.rRe), midIm = 0.5f * (md.lIm + md.rIm);
+    const float sideRe = 0.5f * (md.lRe - md.rRe) * side, sideIm = 0.5f * (md.lIm - md.rIm) * side;
+    gl[i] = (midRe + sideRe) * gain;
+    gli[i] = (midIm + sideIm) * gain;
+    gr[i] = (midRe - sideRe) * gain;
+    gri[i] = (midIm - sideIm) * gain;
 }
 
 void Voice::padModes() noexcept
@@ -533,6 +759,7 @@ void Voice::renderGrand (float* bufL, float* bufR, int n) noexcept
     if (residual != nullptr)
     {
         float lowL = residualLowL, lowR = residualLowR;
+        const int ch = residualChannels, rOff = ch - 1;
         for (int k = 0; k < n; ++k)
         {
             const int idx = (int) residualPos;
@@ -541,9 +768,10 @@ void Voice::renderGrand (float* bufL, float* bufR, int n) noexcept
                 residual = nullptr;
                 break;
             }
-            const float t = (float) (residualPos - (double) idx);
-            const float* p = residual + 2 * idx;
-            const float inL = lerp (p[0], p[2], t), inR = lerp (p[1], p[3], t);
+            const float t = (float) (residualPos - (double) idx) * residualScale;
+            const float u = residualScale - t;
+            const auto* p = residual + ch * idx;
+            const float inL = (float) p[0] * u + (float) p[ch] * t, inR = (float) p[rOff] * u + (float) p[ch + rOff] * t;
             lowL += (inL - lowL) * residualSplit;
             lowR += (inR - lowR) * residualSplit;
             bufL[k] += lowL * residualLowGain + (inL - lowL) * residualHighGain;
@@ -594,6 +822,11 @@ int Voice::snapshot (float* freqs, float* levels, int maxCount) const noexcept
 
 void Voice::release (const Settings& s)
 {
+    if (bass)
+    {
+        releaseBass (s);
+        return;
+    }
     if (measured)
     {
         // The key and damper landing: a soft, low thud. The recorded grand's release
@@ -640,7 +873,7 @@ void Voice::cull() noexcept
             const int last = --count;
             re[i] = re[last]; im[i] = im[last]; cr[i] = cr[last]; ci[i] = ci[last];
             gl[i] = gl[last]; gr[i] = gr[last]; freq[i] = freq[last]; radius[i] = radius[last];
-            gli[i] = gli[last]; gri[i] = gri[last];
+            gli[i] = gli[last]; gri[i] = gri[last]; centre[i] = centre[last];
         }
         else
             ++i;
@@ -656,7 +889,11 @@ void Voice::render (float* l, float* r, int n, float gain) noexcept
         float bufL[64] {}, bufR[64] {};
 
         if (measured)
+        {
             renderGrand (bufL, bufR, todo);
+            if (releaseSample != nullptr)
+                renderRelease (bufL, bufR, todo);
+        }
         else if (! electric)
         {
             for (int i = 0; i < count; ++i)

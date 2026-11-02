@@ -6,6 +6,20 @@ namespace cs::piano
 {
 namespace
 {
+    // Samples stored as differences from the previous frame, per channel.
+    void readDeltas (juce::InputStream& in, std::vector<juce::int16>& out, int frames, int channels)
+    {
+        int run[2] = { 0, 0 };
+        for (int s = 0; s < frames * channels; ++s)
+        {
+            auto& r = run[s % channels];
+            r += in.readShort();
+            out.push_back ((juce::int16) r);
+        }
+    }
+
+    // Version 1: stereo, one take per strength (the grand). Version 2 adds the
+    // number of takes and channels, and the release recordings (the bass).
     std::unique_ptr<GrandData> decode (const void* data, size_t size)
     {
         juce::MemoryInputStream compressed (data, size, false);
@@ -15,18 +29,29 @@ namespace
         juce::MemoryInputStream in (raw, false);
 
         char magic[4] {};
-        if (in.read (magic, 4) != 4 || std::memcmp (magic, "CGPD", 4) != 0 || in.readInt() != 1)
+        if (in.read (magic, 4) != 4 || std::memcmp (magic, "CGPD", 4) != 0)
+            return nullptr;
+        const int version = in.readInt();
+        if (version != 1 && version != 2)
             return nullptr;
 
         auto d = std::make_unique<GrandData>();
         d->sampleRate = in.readFloat();
         d->numKeys = (int) (juce::uint16) in.readShort();
         d->numLayers = (int) (juce::uint16) in.readShort();
+        if (version >= 2)
+        {
+            d->numTakes = (int) (juce::uint16) in.readShort();
+            d->channels = (int) (juce::uint16) in.readShort();
+        }
+        if (d->numKeys <= 0 || d->numLayers < 2 || d->numTakes < 1 || d->channels < 1 || d->channels > 2)
+            return nullptr;
         for (int k = 0; k < d->numKeys; ++k)
             d->keyNotes.push_back ((int) (juce::uint8) in.readByte());
 
         const float phaseScale = juce::MathConstants<float>::pi / 32767.0f;
-        for (int i = 0; i < d->numKeys * d->numLayers; ++i)
+        const int numRecords = d->numKeys * d->numLayers * d->numTakes;
+        for (int i = 0; i < numRecords && ! in.isExhausted(); ++i)
         {
             GrandData::Record r;
             r.f0 = in.readFloat();
@@ -38,7 +63,7 @@ namespace
             const int numModes = (juce::uint16) in.readShort();
             const int numOvertones = (juce::uint16) in.readShort();
             const int residualLength = in.readInt();
-            const float residualScale = in.readFloat() / 32767.0f;
+            r.residualScale = in.readFloat() / 32767.0f;
 
             r.firstOvertone = (int) d->overtones.size();
             r.numOvertones = numOvertones;
@@ -68,28 +93,53 @@ namespace
                 d->modes.push_back (mode);
             }
 
-            // Stored as differences from the previous frame.
-            r.firstResidual = (int) (d->residual.size() / 2);
+            r.firstResidual = (int) (d->residual.size() / (size_t) d->channels);
             r.residualLength = residualLength;
-            int run[2] = { 0, 0 };
-            for (int s = 0; s < residualLength * 2; ++s)
-            {
-                run[s & 1] += in.readShort();
-                d->residual.push_back ((float) run[s & 1] * residualScale);
-            }
-
+            readDeltas (in, d->residual, residualLength, d->channels);
             d->records.push_back (r);
         }
 
-        if (in.isExhausted() && (int) d->records.size() == d->numKeys * d->numLayers && d->numKeys > 0)
-            return d;
-        return nullptr;
+        if (version >= 2)
+        {
+            for (int i = 0; i < d->numKeys * d->numTakes && ! in.isExhausted(); ++i)
+            {
+                GrandData::Release rel;
+                rel.length = in.readInt();
+                rel.scale = in.readFloat() / 32767.0f;
+                rel.level = in.readFloat();
+                rel.first = (int) (d->releaseSamples.size() / (size_t) d->channels);
+                readDeltas (in, d->releaseSamples, rel.length, d->channels);
+                d->releases.push_back (rel);
+            }
+            if ((int) d->releases.size() != d->numKeys * d->numTakes)
+                return nullptr;
+        }
+
+        if (! in.isExhausted() || (int) d->records.size() != numRecords)
+            return nullptr;
+
+        // Each key's average pitch over all its recordings, for tuning it exactly.
+        for (int k = 0; k < d->numKeys; ++k)
+        {
+            double logSum = 0.0;
+            const int n = d->numLayers * d->numTakes;
+            for (int i = 0; i < n; ++i)
+                logSum += std::log ((double) d->records[(size_t) (k * n + i)].f0);
+            d->keyF0.push_back ((float) std::exp (logSum / n));
+        }
+        return d;
     }
 }
 
 const GrandData* GrandData::get()
 {
     static const std::unique_ptr<GrandData> data = decode (CruzGrandData::ConcertGrand_cgpd, (size_t) CruzGrandData::ConcertGrand_cgpdSize);
+    return data.get();
+}
+
+const GrandData* GrandData::bass()
+{
+    static const std::unique_ptr<GrandData> data = decode (CruzGrandData::BassGuitar_cgpd, (size_t) CruzGrandData::BassGuitar_cgpdSize);
     return data.get();
 }
 

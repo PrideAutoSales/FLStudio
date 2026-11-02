@@ -14,8 +14,8 @@ A wavetable synthesizer instrument (VST3 + AU) for FL Studio on Mac.
 - **Modulation**: 3 envelopes (Env 1 is the amp), 4 LFOs with drawable shapes, tempo sync and Free/Retrig/Envelope modes,
   4 macros, velocity, note, mod wheel, aftertouch, pitch bend and per-note random.
   Drag any source onto a knob; 16 routings shown on the MATRIX page.
-- **Piano** on its own PIANO tab, with six models: Concert Grand, Bright Grand, Upright, Felt Piano,
-  Tine EP and Reed EP. The **Concert Grand is measured from a real grand**: every recorded note (30 keys, each
+- **Piano** on its own PIANO tab, with seven models: Concert Grand, Bright Grand, Upright, Felt Piano,
+  Tine EP, Reed EP and Bass Guitar. The **Concert Grand is measured from a real grand**: every recorded note (30 keys, each
   struck at 16 strengths) was taken apart into its string modes, the slightly detuned, decaying sine waves
   that give each overtone its beating and its quick-then-long decay, with their own level and phase in each
   stereo channel. The plugin rebuilds every note from those modes, with the first 50 to 150 ms of the strike
@@ -29,6 +29,15 @@ A wavetable synthesizer instrument (VST3 + AU) for FL Studio on Mac.
   sustain pedal works). Controls: Tone, Dynamics, Sustain, Release, Strings, Body, Hammer and Width, with a
   display of the partials for a soft and a hard middle C. The piano can be layered with the oscillators and
   sent through the filter and effects.
+- **Bass Guitar**, on the PIANO tab, is **measured from a real fingered bass** the same way: every note from the
+  open low B to E4 (B1 to E5 in FL Studio; 42 notes) plucked at 4 strengths, 4 takes of each, 672 plucks in all,
+  each taken apart into its string modes against the amp's own hiss, with the first 200 ms of every pluck kept
+  exactly as recorded. Velocity picks the strength (soft plucks are darker and rounder, hard ones have more finger
+  and fret) and moves smoothly between them; repeated notes cycle through the four takes, as no two real plucks
+  are the same; each note is tuned exactly, with each take keeping its own few cents; and letting go plays that
+  note's own recorded finger release, the sound of the finger stopping the string. Eight presets in Bass use it:
+  Fingered Bass, Fingered Bass Legato (hammer-ons), Fingered Bass Slides, Warm Studio Bass, Bright Finger Bass,
+  Muted Finger Bass, Driven Amp Bass and Dub Finger Bass.
 - **Serum-style layout**: OSC, PIANO, FX, MATRIX and GLOBAL tabs. The OSC page has sub and noise
   on the left, the two oscillators (with OCT/SEM/FIN/CRS boxes above the wave display), the filter on the right,
   the envelopes and LFOs below with a large graph, voicing beside them, and the four macros along the bottom.
@@ -41,7 +50,7 @@ A wavetable synthesizer instrument (VST3 + AU) for FL Studio on Mac.
   switched-on modules in a rack, with live curves for the distortion, EQ and filter. Effect knobs can be
   modulated like any other: drag a macro, LFO or envelope onto them.
 - Mono/legato/glide, up to 32 voices, user presets saved to `~/Music/Cruz Synth Presets`.
-- **369 factory presets** in nine folders of the preset menu: Bass, Leads, Keys, Pads, Strings, Synths
+- **377 factory presets** in nine folders of the preset menu: Bass, Leads, Keys, Pads, Strings, Synths
   (plucks, arps, stabs and chords), Deep House, Minimal and Pianos (grands, uprights, felt and electric pianos). They cover future house and bass house, big-room and
   festival leads, dubstep growls, screeches and wobbles, reese and sub basses, pumping sidechain chords and pads,
   deep house organ basses, dub chords, Rhodes and warm pads, and minimal blips, clicks, rubber basses and echo stabs.
@@ -59,7 +68,8 @@ plays every preset at full velocity. The presets added in 0.6.0 take that level 
 gain, after the distortion, so their drive sounds the same at any level.
 
 The Concert Grand's data, `Resources/ConcertGrand.cgpd`, is made by the scripts in
-[tools/piano](tools/piano), which explains how.
+[tools/piano](tools/piano), which explains how. The Bass Guitar's, `Resources/BassGuitar.cgpd`, is made by the
+same scripts plus [tools/bass](tools/bass).
 
 Install steps: [INSTALL.md](INSTALL.md).
 
@@ -69,3 +79,9 @@ The Concert Grand is measured from the **Salamander Grand Piano V3** recordings 
 [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), via
 [sfzinstruments/SalamanderGrandPiano](https://github.com/sfzinstruments/SalamanderGrandPiano).
 `Resources/ConcertGrand.cgpd` is derived from those recordings and shared under the same licence.
+
+The Bass Guitar is measured from the **Black And Blue Basses** recordings (the fingered five-string) by
+Karoryfer Samples, released under
+[CC0](https://creativecommons.org/publicdomain/zero/1.0/), via
+[sfzinstruments/karoryfer.black-and-blue-basses](https://github.com/sfzinstruments/karoryfer.black-and-blue-basses).
+`Resources/BassGuitar.cgpd` is derived from them.

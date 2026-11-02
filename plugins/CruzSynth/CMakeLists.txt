@@ -7,7 +7,7 @@ juce_add_plugin(CruzSynth
     PLUGIN_MANUFACTURER_CODE Cruz
     PLUGIN_CODE Crsy
     PRODUCT_NAME "Cruz Synth"
-    VERSION 0.6.0
+    VERSION 0.7.0
     FORMATS VST3 AU
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
@@ -37,12 +37,12 @@ target_sources(CruzSynth
 
 target_include_directories(CruzSynth PRIVATE Source)
 
-# Measurements of a recorded concert grand that the Concert Grand piano is
-# rebuilt from (see tools/piano/README.md).
+# Measurements of a recorded concert grand and bass guitar that the Concert
+# Grand and Bass Guitar are rebuilt from (see tools/piano/ and tools/bass/).
 juce_add_binary_data(CruzSynthGrandData
     HEADER_NAME CruzGrandData.h
     NAMESPACE CruzGrandData
-    SOURCES Resources/ConcertGrand.cgpd)
+    SOURCES Resources/ConcertGrand.cgpd Resources/BassGuitar.cgpd)
 
 target_compile_definitions(CruzSynth
     PUBLIC

@@ -803,7 +803,7 @@ void PianoView::timerCallback()
     {
         auto voice = std::make_unique<piano::Voice>();
         voice->prepare (48000.0);
-        voice->strike (60.0f, vel, s);
+        voice->strike (s.model == piano::BassGuitar ? 40.0f : 60.0f, vel, s); // the bass shows its open A string
         out.f.resize (300);
         out.a.resize (300);
         const int n = voice->snapshot (out.f.data(), out.a.data(), 300);

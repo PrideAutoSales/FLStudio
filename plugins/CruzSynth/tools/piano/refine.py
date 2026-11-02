@@ -249,7 +249,7 @@ def fix_rise(eb, rows):
     kk = max(1, int(0.02 / eb['T']))
     trend = np.convolve(np.pad(edb, (kk // 2, kk - 1 - kk // 2), mode='edge'), np.ones(kk) / kk, mode='valid')
     w = 10 ** (-np.maximum(trend, edb.max() - 60) / 20)
-    for ch, c in ((0, 3), (1, 5)):
+    for ch, c in ((0, 3), (seg.shape[0] - 1, 5)):   # a mono recording fits both from its one channel
         want = seg[ch] - G[:, ~rise] @ (rows[~rise, c] + 1j * rows[~rise, c + 1])
         b = np.linalg.lstsq(G[:, rise] * w[:, None], want * w, rcond=None)[0]
         out[rise, c], out[rise, c + 1] = b.real, b.imag
@@ -335,6 +335,12 @@ def run(job):
         return job[3], 'FAILED %r' % e
 
 
+def use_noise(path):
+    if path:
+        import modal
+        modal.set_noise(modal.load(path)[0])
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('src')
@@ -342,10 +348,11 @@ if __name__ == '__main__':
     ap.add_argument('out')
     ap.add_argument('names', nargs='*')
     ap.add_argument('-j', type=int, default=os.cpu_count())
+    ap.add_argument('--noise', help='a recording of the chain\'s own noise (see modal.set_noise)')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     names = a.names or sorted(f[:-4] for f in os.listdir(a.analysis) if f.endswith('.npz'))
     from multiprocessing import Pool
-    with Pool(a.j) as p:
+    with Pool(a.j, initializer=use_noise, initargs=(a.noise,)) as p:
         for name, msg in p.imap_unordered(run, [(a.src, a.analysis, a.out, n) for n in names]):
             print(name, msg, flush=True)

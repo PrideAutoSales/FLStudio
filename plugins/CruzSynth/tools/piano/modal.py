@@ -57,7 +57,30 @@ def _spectrum(xm, sr, a, b):
     N = 1 << int(np.ceil(np.log2((b - a) * 4)))
     return np.abs(np.fft.rfft(seg, N)), np.fft.rfftfreq(N, 1 / sr)
 
-def find_partials(xm, sr, t0, note, fmax):
+NOISE = None   # (X, N, n) of a recording of the chain's own noise, if set_noise was called
+
+
+def set_noise(x):
+    """Take the noise floor from a recording of the chain's own noise instead of the
+    end of each recording (for instruments still sounding when their recordings end)."""
+    global NOISE
+    x = np.atleast_2d(x)
+    N = 1 << int(np.ceil(np.log2(x.shape[1] * 2)))
+    NOISE = (np.fft.rfft(x, N, axis=1), N, x.shape[1])
+
+
+def floor_at(sr, fk, half, fallback):
+    """The noise level in the band around fk that stage_signal(..., fk, half) sees."""
+    if NOISE is None:
+        return fallback
+    Xn, Nn, n = NOISE
+    y, T, _, sig_t = stage_signal(Xn, Nn, sr, fk, half)
+    env = np.sqrt((np.abs(y) ** 2).mean(0))
+    i0, i1 = int(4 * sig_t / T), int((n / sr - 4 * sig_t) / T)
+    return float(np.median(env[i0:i1])) if i1 > i0 + 4 else fallback
+
+
+def find_partials(xm, sr, t0, note, fmax, max_miss=8):
     f0n = 440 * 2 ** ((note - 69) / 12)
     longS, longF = _spectrum(xm, sr, t0 + int(0.03 * sr), t0 + int(min(3.0, 0.03 + 400 / f0n) * sr))
     shortS, shortF = _spectrum(xm, sr, t0 + int(0.01 * sr), t0 + int(max(0.25, 12 / f0n) * sr))
@@ -86,7 +109,7 @@ def find_partials(xm, sr, t0, note, fmax):
                     f0, B = np.sqrt(c[0]), c[1] / c[0]
         else:
             misses += 1
-            if misses > 8 and k > 12:
+            if misses > max_miss and k > 12:
                 break
         k += 1
     return f0, B, found
@@ -225,11 +248,11 @@ def fit_partial(X, N, sr, fk, t0s, tend, sp, p_stage=(3, 3, 4), joint=True, rise
             S_abs = S_all
     return S_abs, A_abs
 
-def analyze(path, note, fmax=18000.0, joint=True):
+def analyze(path, note, fmax=18000.0, joint=True, max_miss=8):
     x, sr = load(path)
     t0 = onset(x, sr)
     n = x.shape[1]
-    f0, B, found = find_partials(x.mean(0), sr, t0, note, min(fmax, 0.45 * sr))
+    f0, B, found = find_partials(x.mean(0), sr, t0, note, min(fmax, 0.45 * sr), max_miss)
     N = 1 << int(np.ceil(np.log2(n * 2)))
     X = np.fft.rfft(x, N, axis=1)
     modes = []
@@ -241,7 +264,7 @@ def analyze(path, note, fmax=18000.0, joint=True):
         last = int((n / sr - 3 * sig_t) / T)
         i0 = int((t0 / sr + 3.2 * sig_t) / T)
         if last - i0 < 10: continue
-        floor = np.percentile(env[max(i0, last - int(2.0 / T)): last], 20)
+        floor = floor_at(sr, fk, min(0.5 * sp, 20.0), np.percentile(env[max(i0, last - int(2.0 / T)): last], 20))
         ref = env[i0: i0 + max(3, int(0.15 / T))].max()
         if ref < floor * 4: continue
         above = np.where(env[i0:last] > max(floor * 3, ref * 1e-4))[0]
@@ -278,7 +301,7 @@ def attack_refit(x, sr, res, Tw=None):
     Acols = np.hstack([E.real, -E.imag])
     lam = 1e-3 * np.linalg.norm(Acols) / np.sqrt(Acols.shape[1])
     Areg = np.vstack([Acols, lam * np.eye(Acols.shape[1])])
-    for ch, key in ((0, 'aL'), (1, 'aR')):
+    for ch, key in ((0, 'aL'), (x.shape[0] - 1, 'aR')):   # a mono recording fits both from its one channel
         rhs = np.concatenate([x[ch, :n] - base[ch], np.zeros(Acols.shape[1])])
         sol = np.linalg.lstsq(Areg, rhs, rcond=None)[0]
         c = sol[:len(rise)] + 1j * sol[len(rise):]

@@ -3,20 +3,22 @@
 #include <juce_core/juce_core.h>
 #include <array>
 #include <cstdint>
+#include "GrandData.h"
 
 // A modal piano: every string partial is a decaying resonator.
 //
 // The Concert Grand is rebuilt from measurements of a real grand (GrandData):
 // every overtone's own modes with their measured levels, decays, detuning and
-// stereo phase, plus the recorded hammer attack. The other models compute their
-// partials from a physical model of the hammer, strings and soundboard.
+// stereo phase, plus the recorded hammer attack. The Bass Guitar is rebuilt the
+// same way from a real bass, with its four takes of every note and the recorded
+// finger release. The other models compute their partials from a physical model
+// of the hammer, strings and soundboard.
 namespace cs::piano
 {
-struct GrandData;
 
 juce::StringArray modelNames();
 juce::String modelDescription (int model);
-enum Model { ConcertGrand, BrightGrand, Upright, Felt, TineEP, ReedEP, NumModels };
+enum Model { ConcertGrand, BrightGrand, Upright, Felt, TineEP, ReedEP, BassGuitar, NumModels };
 
 struct Settings
 {
@@ -35,7 +37,7 @@ class Voice
 {
 public:
     void prepare (double sampleRate);
-    void reset() noexcept { count = 0; noiseEnv = 0.0f; silentRun = 0; residual = nullptr; }
+    void reset() noexcept { count = 0; noiseEnv = 0.0f; silentRun = 0; residual = nullptr; releaseSample = nullptr; }
 
     // Strikes the strings. pitch is a MIDI note number (may be fractional).
     void strike (float pitch, float velocity, const Settings& s);
@@ -49,7 +51,7 @@ public:
     // Adds the next n samples to l and r.
     void render (float* l, float* r, int n, float gain) noexcept;
 
-    bool isSilent() const noexcept { return count == 0 && noiseEnv < 1.0e-5f && residual == nullptr; }
+    bool isSilent() const noexcept { return count == 0 && noiseEnv < 1.0e-5f && residual == nullptr && releaseSample == nullptr; }
 
     // The partials of the current strike (frequency and level), for drawing.
     int snapshot (float* freqs, float* levels, int maxCount) const noexcept;
@@ -59,6 +61,11 @@ private:
 
     void add (float freq, float amp, float decayDbPerSec, float panL, float panR) noexcept;
     void strikeGrand (const GrandData& data, float pitch, float velocity, const Settings& s);
+    void strikeBass (const GrandData& data, float pitch, float velocity, const Settings& s);
+    void releaseBass (const Settings& s);
+    void addMode (const GrandData::Mode& md, float ratio, float detune, float side, float sustainMul, float gain, float maxF) noexcept;
+    float stringLevel() const noexcept;
+    void renderRelease (float* bufL, float* bufR, int n) noexcept;
     void renderGrand (float* bufL, float* bufR, int n) noexcept;
     void addDecay (float dbPerSecAt0Hz, float dbPerSecPerKHz) noexcept;
     void padModes() noexcept;
@@ -71,14 +78,16 @@ private:
     alignas (16) float re[kMax] {}, im[kMax] {}, cr[kMax] {}, ci[kMax] {}, gl[kMax] {}, gr[kMax] {};
     float freq[kMax] {}, radius[kMax] {};
 
-    // Measured grand: each mode has a complex gain per channel (gl/gr real parts,
-    // gli/gri imaginary), the modes swell in along a measured attack curve, and
-    // the recorded hammer attack plays alongside.
-    bool measured = false;
+    // Measured grand or bass: each mode has a complex gain per channel (gl/gr real
+    // parts, gli/gri imaginary), the modes swell in along a measured attack curve,
+    // and the recorded attack plays alongside.
+    bool measured = false, bass = false;
     alignas (16) float gli[kMax] {}, gri[kMax] {};
+    float centre[kMax] {}; // the overtone each mode belongs to, Hz
     const float* attackCurve = nullptr;
-    const float* residual = nullptr;
-    int residualLength = 0;
+    const juce::int16* residual = nullptr;
+    int residualLength = 0, residualChannels = 2;
+    float residualScale = 1.0f;
     double residualPos = 0.0, residualStep = 1.0, attackPos = 0.0;
     float strikeLevel = 0.0f;
     float attackEnd = 0.0f, residualLowGain = 1.0f, residualHighGain = 1.0f;
@@ -95,6 +104,14 @@ private:
     juce::uint32 seed = 12345u;
     float noiseEnv = 0.0f, noiseDecay = 0.0f, noiseL = 0.0f, noiseR = 0.0f;
     float bpG = 0.1f, bpK = 1.0f, bpS1 = 0.0f, bpS2 = 0.0f, lpC = 0.5f, noiseLpState = 0.0f, noiseLpState2 = 0.0f;
+
+    // The bass's recorded release (the finger damping the string), played once.
+    const juce::int16* releaseSample = nullptr;
+    const GrandData* releaseData = nullptr;
+    const GrandData::Release* nextRelease = nullptr; // the take this strike will release with
+    int releaseLength = 0;
+    double releasePos = 0.0, releaseStep = 1.0;
+    float releaseGain = 0.0f;
 
     float bendSemis = 0.0f, note = 60.0f;
     int cullCounter = 0, silentRun = 0;

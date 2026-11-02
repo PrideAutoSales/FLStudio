@@ -781,8 +781,9 @@ void Engine::prepare (double sr, int)
         v->prepare (sr);
     reset();
 
-    // Unpack the measured grand now, so its first note doesn't do it on the audio thread.
+    // Unpack the measured grand and bass now, so their first note doesn't do it on the audio thread.
     piano::GrandData::get();
+    piano::GrandData::bass();
 }
 
 void Engine::reset()

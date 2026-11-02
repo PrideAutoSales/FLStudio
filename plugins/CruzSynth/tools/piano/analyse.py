@@ -36,18 +36,25 @@ def run(job):
         return job[2], 'FAILED %r' % e
 
 
+def use_noise(path):
+    if path:
+        import modal
+        modal.set_noise(modal.load(path)[0])
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('src')
     ap.add_argument('out')
     ap.add_argument('names', nargs='*')
     ap.add_argument('-j', type=int, default=os.cpu_count())
+    ap.add_argument('--noise', help='a recording of the chain\'s own noise (see modal.set_noise)')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     # the sustained notes: A0v1.flac ... C8v16.flac (not the release or pedal samples)
     names = a.names or sorted(f[:-5] for f in os.listdir(a.src)
                               if f.endswith('.flac') and f[0] in 'ABCDEFG' and 'v' in f and f[:-5].split('v')[1].isdigit())
     from multiprocessing import Pool
-    with Pool(a.j) as p:
+    with Pool(a.j, initializer=use_noise, initargs=(a.noise,)) as p:
         for name, msg in p.imap_unordered(run, [(a.src, a.out, n) for n in names]):
             print(name, msg, flush=True)

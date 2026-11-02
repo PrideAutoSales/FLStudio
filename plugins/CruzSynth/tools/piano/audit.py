@@ -9,7 +9,7 @@ overtones within 30 dB of the loudest that drift by more than 2 dB RMS.
 """
 import os, sys, argparse
 import numpy as np
-from modal import load, stage_signal, basis
+from modal import load, stage_signal, basis, floor_at
 
 
 def centres(md):
@@ -42,7 +42,7 @@ def overtone_error(X, N, sr, n, t0, f0, B, k, fk, rows, half=None):
     i0 = int((t0 / sr + max(0.1, 3.5 * sig_t)) / T)
     if last - i0 < 10:
         return None
-    floor = np.percentile(env[max(i0, last - int(2.0 / T)): last], 20)
+    floor = floor_at(sr, fk, half, np.percentile(env[max(i0, last - int(2.0 / T)): last], 20))
     tau = np.arange(i0, last) * T - t0 / sr
     sb = (-rows[:, 2] + 2j * np.pi * rows[:, 1]) - 2j * np.pi * fc
     E = basis(tau, sb, sig_t)
@@ -96,16 +96,23 @@ def run(job):
         return name, repr(ex)
 
 
+def use_noise(path):
+    if path:
+        import modal
+        modal.set_noise(modal.load(path)[0])
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('src')
     ap.add_argument('analysis')
     ap.add_argument('names', nargs='*')
     ap.add_argument('-j', type=int, default=os.cpu_count())
+    ap.add_argument('--noise', help='a recording of the chain\'s own noise (see modal.set_noise)')
     a = ap.parse_args()
     names = a.names or sorted(f[:-4] for f in os.listdir(a.analysis) if f.endswith('.npz'))
     from multiprocessing import Pool
-    with Pool(a.j) as p:
+    with Pool(a.j, initializer=use_noise, initargs=(a.noise,)) as p:
         for name, s in p.imap_unordered(run, [(a.src, a.analysis, n) for n in names]):
             if isinstance(s, str):
                 print(name, s, flush=True)

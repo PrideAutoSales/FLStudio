@@ -15,6 +15,12 @@
 //
 // Source recordings: Salamander Grand Piano V3 by Alexander Holm (Yamaha C5),
 // CC BY 3.0, https://github.com/sfzinstruments/SalamanderGrandPiano
+//
+// The Bass Guitar is measured the same way from a fingered 5-string bass: all 42
+// notes from its low B (30.9 Hz) up, at 4 strengths with 4 takes each, plus the
+// sound of the finger damping each string (tools/bass/). Source recordings:
+// Black And Blue Basses by Karoryfer Samples, public domain (CC0),
+// https://github.com/sfzinstruments/karoryfer.black-and-blue-basses
 namespace cs::piano
 {
 struct GrandData
@@ -37,28 +43,44 @@ struct GrandData
         float attackTime = 0.0f; // seconds the attack table and residual cover
         float attack[24] {};    // gain of the modes over attackTime (they swell in)
         int firstMode = 0, numModes = 0;
-        int firstResidual = 0, residualLength = 0; // stereo frames
+        int firstResidual = 0, residualLength = 0; // frames of `channels` samples
+        float residualScale = 0.0f;                // residual sample value of 1
         int firstOvertone = 0, numOvertones = 0;
+    };
+
+    // A recording of the string being damped (the bass's finger release).
+    struct Release
+    {
+        int first = 0, length = 0; // frames of `channels` samples in releaseSamples
+        float scale = 0.0f;        // sample value of 1
+        float level = 0.0f;        // dB, RMS of its first 60 ms
     };
 
     static constexpr int kGainPoints = 24;
 
-    int numKeys = 0, numLayers = 0;
+    int numKeys = 0, numLayers = 0, numTakes = 1, channels = 2;
     float sampleRate = 48000.0f;
     std::vector<int> keyNotes;          // MIDI note of each recorded key
-    std::vector<Record> records;        // key-major: records[key * numLayers + layer]
+    std::vector<float> keyF0;           // average fundamental of each key's recordings, Hz
+    std::vector<Record> records;        // key-major: records[(key * numLayers + layer) * numTakes + take]
     std::vector<Mode> modes;
-    std::vector<float> residual;        // interleaved L R
+    std::vector<juce::int16> residual;  // interleaved by channel
     std::vector<Overtone> overtones;
+    std::vector<Release> releases;      // releases[key * numTakes + take], if recorded
+    std::vector<juce::int16> releaseSamples;
 
-    const Record& record (int key, int layer) const noexcept { return records[(size_t) (key * numLayers + layer)]; }
+    const Record& record (int key, int layer, int take = 0) const noexcept
+    {
+        return records[(size_t) ((key * numLayers + layer) * numTakes + take)];
+    }
 
     // The nearest recorded key to a MIDI note.
     int nearestKey (float note) const noexcept;
     // The level (dB) a key plays at for a fractional strike strength 0..numLayers-1.
-    float levelAt (int key, float layer) const noexcept;
+    float levelAt (int key, float layer) const noexcept; // layer-major levels (the same for every take)
 
     // Decoded once and shared by every voice. Returns nullptr if the data is missing.
-    static const GrandData* get();
+    static const GrandData* get();   // the concert grand
+    static const GrandData* bass();  // the bass guitar
 };
 } // namespace cs::piano

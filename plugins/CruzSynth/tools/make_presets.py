@@ -1603,6 +1603,48 @@ def build_bass_more():
     mono(p, 0.0)
     macros(p, "FxDistDrive", 0.3)
 
+    build_bass_guitars()
+
+
+BASS_GUITAR = 6   # the Bass Guitar model on the PIANO tab
+
+
+def bass_guitar(name, tone=0.0, dyn=0.5, sus=0.5, damper=0.5, body=0.5, hammer=0.5, level=0.8, voices=6):
+    """The measured bass guitar on its own. Env 1 lets the string ring and the bass's own
+    release (the finger damping the string) ends each note. Macro 1 plucks harder or softer."""
+    p = new("Bass", name)
+    p.set(oscA_on=False, pno_on=True, pno_model=BASS_GUITAR, pno_tone=tone, pno_dynamics=dyn, pno_sustain=sus,
+          pno_damper=damper, pno_strings=0.3, pno_body=body, pno_hammer=hammer, pno_width=0.0,
+          pno_level=level, vel_sens=0.0, poly=voices)
+    amp(p, a=0.0, d=1.0, s=1.0, r=6.0)
+    p.mod("Macro1", "PnoTone", 0.4)
+    return p
+
+
+def build_bass_guitars():
+    # A real fingered bass, rebuilt from measurements of every note (see tools/bass).
+    bass_guitar("Fingered Bass")
+    # One string at a time: a new note while one is held is a hammer-on or pull-off,
+    # the string keeps ringing at the new pitch.
+    mono(bass_guitar("Fingered Bass Legato"), 0.0, legato=True)
+    mono(bass_guitar("Fingered Bass Slides", tone=0.1), 0.07, legato=True)
+    p = bass_guitar("Warm Studio Bass", tone=-0.35, body=0.6)
+    eq(comp(p, thresh=-20.0, ratio=3.0, attack=15.0, release=120.0), low_freq=100.0, low=2.0, high_freq=3500.0,
+       high=-3.0)
+    p = bass_guitar("Bright Finger Bass", tone=0.5, hammer=0.65)
+    eq(comp(p, thresh=-18.0, ratio=4.0, attack=8.0, release=90.0), low_freq=80.0, low=-1.0, high_freq=2500.0,
+       high=3.0)
+    # Notes that stop short, as when the side of the hand rests on the strings.
+    p = bass_guitar("Muted Finger Bass", tone=-0.3, sus=0.2, damper=0.35, hammer=0.6)
+    amp(p, a=0.0, d=0.35, s=0.0, r=0.08)
+    comp(p, thresh=-18.0, ratio=3.0, attack=5.0, release=80.0)
+    p = bass_guitar("Driven Amp Bass", tone=0.2)
+    comp(dist(p, TUBE, 0.35, 0.6, 0.6), thresh=-18.0, ratio=4.0, attack=10.0, release=100.0)
+    p.mod("Macro2", "FxDistDrive", 0.3)
+    p = bass_guitar("Dub Finger Bass", tone=-0.8, sus=0.65, body=0.65, hammer=0.35)
+    eq(comp(p, thresh=-22.0, ratio=3.0, attack=20.0, release=150.0), low_freq=90.0, low=3.0, high_freq=2000.0,
+       high=-6.0)
+
 
 def build_leads_more():
     c = "Leads"
